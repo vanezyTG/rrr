@@ -5,11 +5,10 @@ import aiosqlite
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import *
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart, Command
 
 TOKEN = "8533732699:AAFi654Hr34MSQIA7chQUG2Jd3aOhs-TBAc"
 ADMINS = [6708209142]
-LOG_CHAT = None
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
@@ -17,7 +16,7 @@ dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
 
 flood = {}
-
+media_cd = {}
 
 # ================= DATABASE =================
 
@@ -57,6 +56,32 @@ async def init_db():
 
         await db.commit()
 
+# ================= ANTI FLOOD =================
+
+def anti_flood(user, cooldown=3):
+
+    now = time.time()
+
+    if user in flood:
+
+        if now - flood[user] < cooldown:
+            return False
+
+    flood[user] = now
+    return True
+
+
+def media_cooldown(user):
+
+    now = time.time()
+
+    if user in media_cd:
+
+        if now - media_cd[user] < 8:
+            return False
+
+    media_cd[user] = now
+    return True
 
 # ================= KEYBOARDS =================
 
@@ -79,7 +104,7 @@ def user_menu():
     )
 
 
-def admin_ticket(ticket, user):
+def ticket_admin(ticket, user):
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -124,27 +149,13 @@ def rating_keyboard(ticket):
         ]
     )
 
-
-# ================= FLOOD =================
-
-def anti_flood(user):
-
-    now = time.time()
-
-    if user in flood:
-
-        if now - flood[user] < 2:
-            return False
-
-    flood[user] = now
-
-    return True
-
-
 # ================= START =================
 
 @dp.message(CommandStart())
 async def start(message: Message):
+
+    if message.chat.type != "private":
+        return
 
     async with aiosqlite.connect("support.db") as db:
 
@@ -160,26 +171,36 @@ async def start(message: Message):
         reply_markup=user_menu()
     )
 
-
 # ================= SUPPORT BUTTON =================
 
 @dp.callback_query(F.data == "support")
 async def support(callback: CallbackQuery):
 
+    if callback.message.chat.type != "private":
+        return
+
     await callback.message.answer(
         "✉️ Напишите ваше сообщение."
     )
 
-
 # ================= USER MESSAGE =================
 
-@dp.message(F.from_user.id.not_in(ADMINS))
+@dp.message(F.chat.type == "private", F.from_user.id.not_in(ADMINS))
 async def user_message(message: Message):
 
     user = message.from_user.id
 
     if not anti_flood(user):
+
+        await message.answer("⏳ Подождите пару секунд.")
         return
+
+    if message.photo or message.video or message.document:
+
+        if not media_cooldown(user):
+
+            await message.answer("📎 Медиа можно отправлять раз в 8 секунд")
+            return
 
     async with aiosqlite.connect("support.db") as db:
 
@@ -194,6 +215,18 @@ async def user_message(message: Message):
             return
 
         cursor = await db.execute(
+            "SELECT COUNT(*) FROM tickets WHERE user_id=? AND status='open'",
+            (user,)
+        )
+
+        active = (await cursor.fetchone())[0]
+
+        if active >= 3:
+
+            await message.answer("❗ У вас уже есть 3 активных тикета")
+            return
+
+        cursor = await db.execute(
             "INSERT INTO tickets(user_id,status,created) VALUES(?,?,?)",
             (user, "open", int(time.time()))
         )
@@ -204,7 +237,7 @@ async def user_message(message: Message):
 
     for admin in ADMINS:
 
-        await bot.copy_message(
+        await bot.forward_message(
             admin,
             message.chat.id,
             message.message_id
@@ -218,13 +251,10 @@ async def user_message(message: Message):
 👤 {message.from_user.full_name}
 ID: {user}
 """,
-            reply_markup=admin_ticket(ticket, user)
+            reply_markup=ticket_admin(ticket, user)
         )
 
-    await message.answer(
-        "✅ Сообщение отправлено в поддержку"
-    )
-
+    await message.answer("✅ Сообщение отправлено в поддержку")
 
 # ================= ADMIN REPLY =================
 
@@ -251,16 +281,21 @@ async def admin_message(message: Message):
         message.reply_to_message.text.split("ID:")[1]
     )
 
-    await bot.copy_message(
-        user,
-        message.chat.id,
-        message.message_id
-    )
+    try:
 
-    await message.answer("Ответ отправлен")
+        await bot.forward_message(
+            user,
+            message.chat.id,
+            message.message_id
+        )
 
+        await message.answer("Ответ отправлен")
 
-# ================= TAKE TICKET =================
+    except:
+
+        await message.answer("Ошибка отправки")
+
+# ================= TAKE =================
 
 @dp.callback_query(F.data.startswith("take_"))
 async def take_ticket(callback: CallbackQuery):
@@ -277,7 +312,6 @@ async def take_ticket(callback: CallbackQuery):
         await db.commit()
 
     await callback.answer("Вы взяли тикет")
-
 
 # ================= CLOSE =================
 
@@ -315,7 +349,6 @@ async def close_ticket(callback: CallbackQuery):
 
     await callback.message.edit_text("Тикет закрыт")
 
-
 # ================= RATING =================
 
 @dp.callback_query(F.data.startswith("rate_"))
@@ -337,7 +370,6 @@ async def rating(callback: CallbackQuery):
 
     await callback.message.edit_text("Спасибо за оценку")
 
-
 # ================= BAN =================
 
 @dp.callback_query(F.data.startswith("ban_"))
@@ -356,7 +388,6 @@ async def ban(callback: CallbackQuery):
 
     await callback.answer("Пользователь забанен")
 
-
 # ================= ADMIN COMMANDS =================
 
 @dp.message(Command("stats"))
@@ -367,27 +398,20 @@ async def stats(message: Message):
 
     async with aiosqlite.connect("support.db") as db:
 
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM tickets"
-        )
-
+        cursor = await db.execute("SELECT COUNT(*) FROM tickets")
         tickets = (await cursor.fetchone())[0]
 
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM users"
-        )
-
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
         users = (await cursor.fetchone())[0]
 
     await message.answer(
         f"""
 📊 Статистика
 
-Тикетов: {tickets}
 Пользователей: {users}
+Тикетов: {tickets}
 """
     )
-
 
 # ================= RUN =================
 

@@ -7,8 +7,8 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import *
 from aiogram.filters import Command, CommandStart
 
-TOKEN = "TOKEN_BOT"
-ADMINS = [123456789]
+TOKEN = "8533732699:AAFi654Hr34MSQIA7chQUG2Jd3aOhs-TBAc"
+ADMINS = [6708209142]
 LOG_CHAT = None
 
 bot = Bot(TOKEN)

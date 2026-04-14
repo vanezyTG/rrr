@@ -284,9 +284,7 @@ async def admin_backup(callback: CallbackQuery):
         await callback.message.answer_document(FSInputFile(backup_name), caption=f"✅ Бэкап: {backup_name}")
         os.remove(backup_name)
     except Exception as e:
-        await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
-
-# ==================== ЗАПУСК ====================
+        await callback.answer(f"❌ Ошибка: {e}", show_alert=TrueInlineKeyboardButton===== ЗАПУСК ====================
 async def main():
     await dp.start_polling(bot)
 

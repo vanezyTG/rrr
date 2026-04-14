@@ -28,6 +28,10 @@ BOT_TOKEN = "8557190026:AAGLVLyjqSsre6-h5138wlRHNpZI-DjivVc"
 NEW_BOT_USERNAME = "PulsChatManagerBot"  # ← ТОЛЬКО ЭТО МЕНЯЕШЬ (без @)
 ADMIN_IDS = [6708209142]  # твой ID
 
+# ==================== СОЗДАЁМ БОТА И ДИСПЕТЧЕРА ====================
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+dp = Dispatcher(storage=MemoryStorage())
+
 # ==================== БАЗА ДАННЫХ ====================
 class Database:
     def __init__(self, db_path="redirect.db"):
@@ -285,10 +289,10 @@ async def admin_backup(callback: CallbackQuery):
         os.remove(backup_name)
     except Exception as e:
         await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+
+# ==================== ЗАПУСК ====================
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-    dp = Dispatcher(storage=MemoryStorage())
     asyncio.run(main())

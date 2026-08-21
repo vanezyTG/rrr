@@ -78,7 +78,7 @@ local function loadConfig()
 end
 loadConfig()
 
--- tween helpers
+-- ══ TWEEN HELPERS ════════════════════════════════════════
 local function tw(o,t,p,s,d)
     if not o or not o.Parent then return end
     local tn=TweenService:Create(o,TweenInfo.new(t,s or Enum.EasingStyle.Quart,d or Enum.EasingDirection.Out),p)
@@ -105,7 +105,81 @@ end
 local conns={}
 local function conn(c) conns[#conns+1]=c; return c end
 
--- destroy old
+-- ═══════════════════════════════════════════════════════════
+--   AIM & ESP — КОНФИГ
+-- ═══════════════════════════════════════════════════════════
+local AimbotCfg = {
+    Enabled         = true,
+    FOV             = 150,
+    Smoothness      = 0.5,
+    TargetPart      = "Head",
+    VisibleCheck    = true,
+    ShowFOV         = true,
+    WallhackEnabled = true,
+}
+local TargetParts = {"Head", "Torso"}
+local TargetIndex = 1
+
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+-- ── FRIEND HELPERS ────────────────────────────────────────
+local function isFriend(player)
+    for _, fn in ipairs(FriendList) do
+        if fn == player.Name then return true end
+    end
+    return false
+end
+
+-- ── VISIBLE CHECK ─────────────────────────────────────────
+local function isVisible(targetChar)
+    if not AimbotCfg.VisibleCheck then return true end
+    local targetPart = targetChar:FindFirstChild(AimbotCfg.TargetPart)
+    if not targetPart then return false end
+    local lpChar = LP.Character
+    if not lpChar then return false end
+    raycastParams.FilterDescendantsInstances = {lpChar, targetChar}
+    local origin = Camera.CFrame.Position
+    local result = workspace:Raycast(origin, (targetPart.Position - origin), raycastParams)
+    return result == nil
+end
+
+-- ── CYCLE TARGET ──────────────────────────────────────────
+local function cycleTarget()
+    TargetIndex = TargetIndex % #TargetParts + 1
+    AimbotCfg.TargetPart = TargetParts[TargetIndex]
+    if TargetBtn then TargetBtn.Text = "Target: " .. AimbotCfg.TargetPart end
+    notify("Target", AimbotCfg.TargetPart, 2, true)
+end
+
+-- ── GET CLOSEST PLAYER ────────────────────────────────────
+local function getClosestPlayer()
+    local closest, bestDist = nil, AimbotCfg.FOV
+    local viewCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local lpChar = LP.Character
+
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl == LP or not pl.Character then continue end
+        if isFriend(pl) then continue end
+        local hum = pl.Character:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+
+        local part = pl.Character:FindFirstChild(AimbotCfg.TargetPart)
+        if not part then part = pl.Character:FindFirstChild("HumanoidRootPart") end
+        if not part then continue end
+
+        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if not onScreen then continue end
+
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - viewCenter).Magnitude
+        if dist < bestDist and isVisible(pl.Character) then
+            bestDist = dist; closest = pl
+        end
+    end
+    return closest
+end
+
+-- ══ SCREEN GUI ═══════════════════════════════════════════
 local ex=CoreGui:FindFirstChild("VanezyElite"); if ex then ex:Destroy() end
 
 local SG=Instance.new("ScreenGui")
@@ -137,30 +211,21 @@ local currentSection="Home"
 local settingsOpen=false
 local pickerOpen=false
 
--- ═══════════════════════════════════
--- SHADOW (no glow ring, just shadow)
--- ═══════════════════════════════════
+-- ══ SHADOW ═══════════════════════════════════════════════
 local shadow=Instance.new("Frame")
 shadow.AnchorPoint=Vector2.new(0.5,0.5)
-shadow.Position=UDim2.new(0.5,0,0.5,0)
+shadow.Position=UDim2.new(0.5,0,0.5,12)
 shadow.Size=UDim2.new(0,W+20,0,H+20)
-shadow.BackgroundColor3=BK
-shadow.BackgroundTransparency=0.72
-shadow.BorderSizePixel=0; shadow.ZIndex=1; shadow.Parent=SG
-corner(shadow,20)
+shadow.BackgroundColor3=BK; shadow.BackgroundTransparency=0.72
+shadow.BorderSizePixel=0; shadow.ZIndex=1; shadow.Parent=SG; corner(shadow,20)
 
--- ═══════════════════════════════════
--- MAIN WINDOW
--- ═══════════════════════════════════
+-- ══ MAIN WINDOW ══════════════════════════════════════════
 local win=Instance.new("Frame")
 win.Name="VWin"; win.AnchorPoint=Vector2.new(0.5,0.5)
-win.Position=UDim2.new(0.5,0,0.5,0)
-win.Size=UDim2.new(0,W,0,H)
-win.BackgroundColor3=theme.dark
-win.BorderSizePixel=0; win.ClipsDescendants=true; win.ZIndex=2; win.Parent=SG
-corner(win,16)
+win.Position=UDim2.new(0.5,0,0.5,0); win.Size=UDim2.new(0,W,0,H)
+win.BackgroundColor3=theme.dark; win.BorderSizePixel=0
+win.ClipsDescendants=true; win.ZIndex=2; win.Parent=SG; corner(win,16)
 
--- Animated border
 local winStroke=stroke(win,W3,1.4,0)
 local borderGrad=Instance.new("UIGradient"); borderGrad.Parent=winStroke
 onTheme(function(p)
@@ -173,63 +238,37 @@ onTheme(function(p)
     })
 end)
 
--- ═══════════════════════════════════
--- ANIMATED BG: soft pulsing glow blobs (stay inside win via ClipsDescendants)
--- ═══════════════════════════════════
+-- ══ BG BLOBS ═════════════════════════════════════════════
 local bgLayer=Instance.new("Frame")
 bgLayer.Size=UDim2.new(1,0,1,0); bgLayer.BackgroundTransparency=1
 bgLayer.BorderSizePixel=0; bgLayer.ZIndex=2; bgLayer.Parent=win
-
--- Three slow-pulsing color blobs
 local blobs={}
-local blobDefs={
-    {ax=0.25,ay=0.3,  sz=0.55, phase=0},
-    {ax=0.75,ay=0.65, sz=0.50, phase=2.1},
-    {ax=0.5, ay=0.5,  sz=0.40, phase=4.2},
-}
+local blobDefs={{ax=0.25,ay=0.3,sz=0.55,phase=0},{ax=0.75,ay=0.65,sz=0.50,phase=2.1},{ax=0.5,ay=0.5,sz=0.40,phase=4.2}}
 for i,bd in ipairs(blobDefs) do
-    local blob=Instance.new("Frame")
-    blob.AnchorPoint=Vector2.new(0.5,0.5)
-    blob.Position=UDim2.new(bd.ax,0,bd.ay,0)
-    blob.Size=UDim2.new(bd.sz,0,bd.sz*1.4,0)
-    blob.BackgroundColor3=theme.primary
-    blob.BackgroundTransparency=0.94
-    blob.BorderSizePixel=0; blob.ZIndex=2; blob.Parent=bgLayer
-    corner(blob,999)
-    onTheme(function(p) blob.BackgroundColor3=p end)
-    blobs[i]={f=blob,bd=bd}
+    local blob=Instance.new("Frame"); blob.AnchorPoint=Vector2.new(0.5,0.5)
+    blob.Position=UDim2.new(bd.ax,0,bd.ay,0); blob.Size=UDim2.new(bd.sz,0,bd.sz*1.4,0)
+    blob.BackgroundColor3=theme.primary; blob.BackgroundTransparency=0.94
+    blob.BorderSizePixel=0; blob.ZIndex=2; blob.Parent=bgLayer; corner(blob,999)
+    onTheme(function(p) blob.BackgroundColor3=p end); blobs[i]={f=blob,bd=bd}
 end
-
--- Subtle horizontal line sweep
 local sweep=Instance.new("Frame")
 sweep.Size=UDim2.new(1,0,0,1); sweep.BackgroundColor3=W3
 sweep.BackgroundTransparency=0.94; sweep.BorderSizePixel=0; sweep.ZIndex=2; sweep.Parent=bgLayer
 
--- ═══════════════════════════════════
--- HEADER
--- ═══════════════════════════════════
+-- ══ HEADER ═══════════════════════════════════════════════
 local header=Instance.new("Frame")
-header.Size=UDim2.new(1,0,0,HDR_H)
-header.BackgroundColor3=theme.header
-header.BackgroundTransparency=0
-header.BorderSizePixel=0; header.ZIndex=4; header.Parent=win
+header.Size=UDim2.new(1,0,0,HDR_H); header.BackgroundColor3=theme.header
+header.BackgroundTransparency=0; header.BorderSizePixel=0; header.ZIndex=4; header.Parent=win
 corner(header,16)
--- Square bottom of header
-local hBot=Instance.new("Frame")
-hBot.Size=UDim2.new(1,0,0,16); hBot.Position=UDim2.new(0,0,1,-16)
+local hBot=Instance.new("Frame"); hBot.Size=UDim2.new(1,0,0,16); hBot.Position=UDim2.new(0,0,1,-16)
 hBot.BackgroundColor3=theme.header; hBot.BorderSizePixel=0; hBot.ZIndex=4; hBot.Parent=header
 
--- Header bottom line
 local hLine=Instance.new("Frame")
 hLine.AnchorPoint=Vector2.new(0,1); hLine.Position=UDim2.new(0,0,1,0)
 hLine.Size=UDim2.new(1,0,0,1); hLine.BackgroundColor3=W3
 hLine.BackgroundTransparency=0.80; hLine.BorderSizePixel=0; hLine.ZIndex=5; hLine.Parent=header
 local hLineG=Instance.new("UIGradient"); hLineG.Parent=hLine
-onTheme(function(p) hLineG.Color=ColorSequence.new({
-    ColorSequenceKeypoint.new(0,BK), ColorSequenceKeypoint.new(0.2,p:Lerp(W3,0.35)),
-    ColorSequenceKeypoint.new(0.5,p), ColorSequenceKeypoint.new(0.8,p:Lerp(W3,0.35)),
-    ColorSequenceKeypoint.new(1,BK),
-}) end)
+onTheme(function(p) hLineG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,BK),ColorSequenceKeypoint.new(0.2,p:Lerp(W3,0.35)),ColorSequenceKeypoint.new(0.5,p),ColorSequenceKeypoint.new(0.8,p:Lerp(W3,0.35)),ColorSequenceKeypoint.new(1,BK)}) end)
 
 local logoLbl=Instance.new("TextLabel")
 logoLbl.Position=UDim2.new(0,14,0,0); logoLbl.Size=UDim2.new(0,42,1,0)
@@ -262,12 +301,8 @@ local function makeHBtn(xOff,sym,sz,tsz)
     corner(b,sz/2); stroke(b,W3,1,0.90)
     b.MouseEnter:Connect(function() tw(b,0.15,{BackgroundTransparency=0,TextColor3=W3}) end)
     b.MouseLeave:Connect(function() tw(b,0.20,{BackgroundTransparency=0.30,TextColor3=theme.sub}) end)
-    b.MouseButton1Down:Connect(function()
-        tw(b,0.08,{Size=UDim2.new(0,sz-4,0,sz-4),Position=UDim2.new(1,xOff+2,0.5,-(sz-4)/2)},Enum.EasingStyle.Quad)
-    end)
-    b.MouseButton1Up:Connect(function()
-        twBack(b,0.20,{Size=UDim2.new(0,sz,0,sz),Position=UDim2.new(1,xOff,0.5,-sz/2)})
-    end)
+    b.MouseButton1Down:Connect(function() tw(b,0.08,{Size=UDim2.new(0,sz-4,0,sz-4),Position=UDim2.new(1,xOff+2,0.5,-(sz-4)/2)},Enum.EasingStyle.Quad) end)
+    b.MouseButton1Up:Connect(function() twBack(b,0.20,{Size=UDim2.new(0,sz,0,sz),Position=UDim2.new(1,xOff,0.5,-sz/2)}) end)
     return b
 end
 local closeBtn=makeHBtn(-42,"×",30,22)
@@ -276,7 +311,6 @@ local gearBtn =makeHBtn(-110,"⚙",26,14)
 closeBtn.MouseEnter:Connect(function() tw(closeBtn,0.14,{BackgroundColor3=rgb(198,36,50),TextColor3=W3,BackgroundTransparency=0}) end)
 closeBtn.MouseLeave:Connect(function() tw(closeBtn,0.20,{BackgroundColor3=rgb(22,22,32),TextColor3=theme.sub,BackgroundTransparency=0.30}) end)
 
--- Win drag
 local function makeWinDrag(h)
     local drag,sm,sx,sy=false,nil,0,0
     h.InputBegan:Connect(function(i)
@@ -289,7 +323,7 @@ local function makeWinDrag(h)
         if i.UserInputType~=Enum.UserInputType.MouseMovement and i.UserInputType~=Enum.UserInputType.Touch then return end
         local d=UserInputService:GetMouseLocation()-sm; winPosX=sx+d.X; winPosY=sy+d.Y
         win.Position=UDim2.new(0.5,winPosX,0.5,winPosY)
-        shadow.Position=UDim2.new(0.5,winPosX,0.5,winPosY)
+        shadow.Position=UDim2.new(0.5,winPosX,0.5,winPosY+12)
     end))
     conn(UserInputService.InputEnded:Connect(function(i)
         if i.UserInputType~=Enum.UserInputType.MouseButton1 and i.UserInputType~=Enum.UserInputType.Touch then return end
@@ -298,37 +332,15 @@ local function makeWinDrag(h)
 end
 makeWinDrag(header)
 
--- ═══════════════════════════════════
--- BODY
--- ═══════════════════════════════════
+-- ══ BODY ═════════════════════════════════════════════════
 local body=Instance.new("Frame")
 body.Position=UDim2.new(0,0,0,HDR_H); body.Size=UDim2.new(1,0,1,-HDR_H)
 body.BackgroundTransparency=1; body.ZIndex=3; body.Parent=win
 
 local grip=Instance.new("TextButton")
-grip.AnchorPoint=Vector2.new(0.5,1)
-grip.Position=UDim2.new(0.5,0,1,-4)
-grip.Size=UDim2.new(0,80,0,6)
-grip.BackgroundColor3=W3
-grip.BackgroundTransparency=0.84
-grip.Text=""
-grip.AutoButtonColor=false
-grip.ZIndex=7
-grip.Parent=win
-corner(grip,3)
-
--- Invisible hitbox — ловит клики рядом
-local gripHit=Instance.new("TextButton")
-gripHit.AnchorPoint=Vector2.new(0.5,1)
-gripHit.Position=UDim2.new(0.5,0,1,-4)
-gripHit.Size=UDim2.new(0,140,0,24)
-gripHit.BackgroundTransparency=1
-gripHit.Text=""
-gripHit.AutoButtonColor=false
-gripHit.ZIndex=6
-gripHit.Parent=win
-
--- Grip drag logic
+grip.AnchorPoint=Vector2.new(0.5,1); grip.Position=UDim2.new(0.5,0,1,-6)
+grip.Size=UDim2.new(0,44,0,4); grip.BackgroundColor3=W3; grip.BackgroundTransparency=0.84
+grip.Text=""; grip.AutoButtonColor=false; grip.ZIndex=7; grip.Parent=win; corner(grip,2)
 local function makeGripDrag(h,onP,onR)
     local drag,sm,sx,sy=false,nil,0,0
     h.InputBegan:Connect(function(i)
@@ -339,34 +351,27 @@ local function makeGripDrag(h,onP,onR)
         if not drag then return end
         if i.UserInputType~=Enum.UserInputType.MouseMovement and i.UserInputType~=Enum.UserInputType.Touch then return end
         local d=UserInputService:GetMouseLocation()-sm; winPosX=sx+d.X; winPosY=sy+d.Y
-        win.Position=UDim2.new(0.5,winPosX,0.5,winPosY); shadow.Position=UDim2.new(0.5,winPosX,0.5,winPosY)
+        win.Position=UDim2.new(0.5,winPosX,0.5,winPosY); shadow.Position=UDim2.new(0.5,winPosX,0.5,winPosY+12)
     end))
     conn(UserInputService.InputEnded:Connect(function(i)
         if i.UserInputType~=Enum.UserInputType.MouseButton1 and i.UserInputType~=Enum.UserInputType.Touch then return end
         if drag and onR then onR() end; drag=false
     end))
 end
+grip.MouseEnter:Connect(function() tw(grip,0.16,{BackgroundTransparency=0.52,Size=UDim2.new(0,58,0,5)}) end)
+grip.MouseLeave:Connect(function() tw(grip,0.22,{BackgroundTransparency=0.84,Size=UDim2.new(0,44,0,4)}) end)
+makeGripDrag(grip,
+    function() tw(grip,0.10,{BackgroundTransparency=0.26,Size=UDim2.new(0,64,0,5)}) end,
+    function() tw(grip,0.22,{BackgroundTransparency=0.84,Size=UDim2.new(0,44,0,4)}) end)
 
-gripHit.MouseEnter:Connect(function() tw(grip,0.16,{BackgroundTransparency=0.52,Size=UDim2.new(0,96,0,7)}) end)
-gripHit.MouseLeave:Connect(function() tw(grip,0.22,{BackgroundTransparency=0.84,Size=UDim2.new(0,80,0,6)}) end)
-makeGripDrag(gripHit,
-    function() tw(grip,0.10,{BackgroundTransparency=0.26,Size=UDim2.new(0,96,0,7)}) end,
-    function() tw(grip,0.22,{BackgroundTransparency=0.84,Size=UDim2.new(0,80,0,6)}) end)
-
--- ═══════════════════════════════════
--- NAV
--- ═══════════════════════════════════
+-- ══ NAV ══════════════════════════════════════════════════
 local nav=Instance.new("Frame")
 nav.Size=UDim2.new(0,NAV_W,1,0); nav.BackgroundColor3=theme.header
 nav.BackgroundTransparency=0.12; nav.BorderSizePixel=0; nav.ClipsDescendants=true
-nav.ZIndex=3; nav.Parent=body
-corner(nav,14)
--- Square top corners of nav
-local navTopFix=Instance.new("Frame")
-navTopFix.Size=UDim2.new(1,0,0,14); navTopFix.BackgroundColor3=theme.header
+nav.ZIndex=3; nav.Parent=body; corner(nav,14)
+local navTopFix=Instance.new("Frame"); navTopFix.Size=UDim2.new(1,0,0,14); navTopFix.BackgroundColor3=theme.header
 navTopFix.BackgroundTransparency=0.12; navTopFix.BorderSizePixel=0; navTopFix.ZIndex=3; navTopFix.Parent=nav
 
--- Nav right border
 local navBorderF=Instance.new("Frame")
 navBorderF.AnchorPoint=Vector2.new(1,0); navBorderF.Position=UDim2.new(1,0,0,0)
 navBorderF.Size=UDim2.new(0,1,1,0); navBorderF.BackgroundColor3=W3
@@ -374,9 +379,7 @@ navBorderF.BackgroundTransparency=0.88; navBorderF.BorderSizePixel=0; navBorderF
 local navBG=Instance.new("UIGradient"); navBG.Rotation=90; navBG.Parent=navBorderF
 onTheme(function(p) navBG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,BK),ColorSequenceKeypoint.new(0.3,p:Lerp(W3,0.32)),ColorSequenceKeypoint.new(0.7,p:Lerp(W3,0.32)),ColorSequenceKeypoint.new(1,BK)}) end)
 
--- Top shadow fade on nav
-local navTopShadow=Instance.new("Frame")
-navTopShadow.Size=UDim2.new(1,0,0,28); navTopShadow.BackgroundColor3=BK
+local navTopShadow=Instance.new("Frame"); navTopShadow.Size=UDim2.new(1,0,0,28); navTopShadow.BackgroundColor3=BK
 navTopShadow.BackgroundTransparency=0; navTopShadow.BorderSizePixel=0; navTopShadow.ZIndex=8; navTopShadow.Parent=nav
 local navTS_G=Instance.new("UIGradient"); navTS_G.Rotation=90
 navTS_G.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.30),NumberSequenceKeypoint.new(1,1)}); navTS_G.Parent=navTopShadow
@@ -386,30 +389,20 @@ navList.Size=UDim2.new(1,0,1,-44); navList.BackgroundTransparency=1; navList.ZIn
 local navLayout=Instance.new("UIListLayout"); navLayout.Padding=UDim.new(0,2); navLayout.SortOrder=Enum.SortOrder.LayoutOrder; navLayout.Parent=navList
 uipad(navList,6,6,12,0)
 
--- Content area
 local content=Instance.new("Frame")
 content.Position=UDim2.new(0,NAV_W,0,0); content.Size=UDim2.new(1,-NAV_W,1,0)
 content.BackgroundTransparency=1; content.ClipsDescendants=true; content.ZIndex=3; content.Parent=body
 uipad(content,12,12,12,12)
 
-local contentTopShadow=Instance.new("Frame")
-contentTopShadow.Size=UDim2.new(1,24,0,40)
-contentTopShadow.Position=UDim2.new(0,-12,0,-12)
-contentTopShadow.BackgroundColor3=BK
-contentTopShadow.BackgroundTransparency=0
-contentTopShadow.BorderSizePixel=0
-contentTopShadow.ZIndex=9
-contentTopShadow.Parent=content
+local contentTopShadow=Instance.new("Frame"); contentTopShadow.Size=UDim2.new(1,0,0,32); contentTopShadow.BackgroundColor3=BK
+contentTopShadow.BackgroundTransparency=0; contentTopShadow.BorderSizePixel=0; contentTopShadow.ZIndex=9; contentTopShadow.Parent=content
 local cts_G=Instance.new("UIGradient"); cts_G.Rotation=90
 cts_G.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.28),NumberSequenceKeypoint.new(1,1)}); cts_G.Parent=contentTopShadow
 
--- ═══════════════════════════════════
--- WIDGET FACTORY
--- ═══════════════════════════════════
+-- ══ WIDGET FACTORY ═══════════════════════════════════════
 local function makeSep(parent,order)
     local f=Instance.new("Frame"); f.Size=UDim2.new(1,0,0,1); f.BackgroundColor3=W3
-    f.BackgroundTransparency=0.90; f.BorderSizePixel=0; f.LayoutOrder=order or 0; f.ZIndex=3; f.Parent=parent
-    corner(f,1)
+    f.BackgroundTransparency=0.90; f.BorderSizePixel=0; f.LayoutOrder=order or 0; f.ZIndex=3; f.Parent=parent; corner(f,1)
     local g=Instance.new("UIGradient"); g.Parent=f
     onTheme(function(p) g.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,BK),ColorSequenceKeypoint.new(0.35,p:Lerp(W3,0.22)),ColorSequenceKeypoint.new(0.65,p:Lerp(W3,0.22)),ColorSequenceKeypoint.new(1,BK)}) end)
     return f
@@ -433,7 +426,7 @@ local function makeCard(parent,order,h)
     return f
 end
 
--- Toggle: clean white knob, colored track, no extra frames
+-- Toggle
 local function makeToggle(parent,name,key,tbl,order,cb)
     local f=makeCard(parent,order,40)
     local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-70,1,0); lbl.Position=UDim2.new(0,14,0,0)
@@ -473,144 +466,172 @@ local function makeToggle(parent,name,key,tbl,order,cb)
     return f,lbl
 end
 
--- Button: color blends with shine, no separate overlay box
+-- Button
 local function makeBtn(parent,text,color,order,cb)
     local wrap=Instance.new("Frame"); wrap.Size=UDim2.new(1,0,0,40); wrap.BackgroundTransparency=1
     wrap.LayoutOrder=order or 0; wrap.ZIndex=3; wrap.Parent=parent
     local b=Instance.new("TextButton"); b.Size=UDim2.new(1,0,1,0); b.AutoButtonColor=false; b.Text=""
     b.ZIndex=4; b.Parent=wrap; corner(b,14)
-
-    -- Gradient that blends color with lighter top
     b.BackgroundColor3=color
     local bGrad=Instance.new("UIGradient"); bGrad.Rotation=90
-    bGrad.Color=ColorSequence.new({
-        ColorSequenceKeypoint.new(0,color:Lerp(W3,0.22)),
-        ColorSequenceKeypoint.new(1,color:Lerp(BK,0.10)),
-    }); bGrad.Parent=b
+    bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.22)),ColorSequenceKeypoint.new(1,color:Lerp(BK,0.10))}); bGrad.Parent=b
     stroke(b,W3,1,0.88)
-
     local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,0,1,0); lbl.BackgroundTransparency=1
     lbl.Text=text; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=13; lbl.TextColor3=W3; lbl.ZIndex=5; lbl.Parent=b
-
-    b.MouseEnter:Connect(function()
-        bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.34)),ColorSequenceKeypoint.new(1,color:Lerp(W3,0.06))})
-        tw(b,0.14,{Size=UDim2.new(1,-4,0.92,0)})
-    end)
-    b.MouseLeave:Connect(function()
-        bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.22)),ColorSequenceKeypoint.new(1,color:Lerp(BK,0.10))})
-        twBack(b,0.22,{Size=UDim2.new(1,0,1,0)})
-    end)
-    b.MouseButton1Down:Connect(function()
-        tw(b,0.08,{Size=UDim2.new(1,-8,0.86,0)},Enum.EasingStyle.Quad)
-        bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.10)),ColorSequenceKeypoint.new(1,color:Lerp(BK,0.20))})
-    end)
-    b.MouseButton1Up:Connect(function()
-        twBack(b,0.20,{Size=UDim2.new(1,0,1,0)})
-        bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.22)),ColorSequenceKeypoint.new(1,color:Lerp(BK,0.10))})
-    end)
+    b.MouseEnter:Connect(function() bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.34)),ColorSequenceKeypoint.new(1,color:Lerp(W3,0.06))}); tw(b,0.14,{Size=UDim2.new(1,-4,0.92,0)}) end)
+    b.MouseLeave:Connect(function() bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.22)),ColorSequenceKeypoint.new(1,color:Lerp(BK,0.10))}); twBack(b,0.22,{Size=UDim2.new(1,0,1,0)}) end)
+    b.MouseButton1Down:Connect(function() tw(b,0.08,{Size=UDim2.new(1,-8,0.86,0)},Enum.EasingStyle.Quad); bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.10)),ColorSequenceKeypoint.new(1,color:Lerp(BK,0.20))}) end)
+    b.MouseButton1Up:Connect(function() twBack(b,0.20,{Size=UDim2.new(1,0,1,0)}); bGrad.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,color:Lerp(W3,0.22)),ColorSequenceKeypoint.new(1,color:Lerp(BK,0.10))}) end)
     if cb then b.MouseButton1Click:Connect(cb) end
     return b
 end
 
--- ═══════════════════════════════════
--- NOTIFICATIONS — GLASS + CORNER SLIDE
--- ═══════════════════════════════════
+-- Slider
+local function makeSlider(parent,name,key,tbl,mn,mx,order,suffix,cb)
+    local f=makeCard(parent,order,52)
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-70,0,18); lbl.Position=UDim2.new(0,14,0,6)
+    lbl.BackgroundTransparency=1; lbl.Text=name; lbl.Font=Enum.Font.GothamMedium; lbl.TextSize=13
+    lbl.TextColor3=theme.text; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.ZIndex=4; lbl.Parent=f
+
+    local valLbl=Instance.new("TextLabel"); valLbl.AnchorPoint=Vector2.new(1,0)
+    valLbl.Size=UDim2.new(0,60,0,18); valLbl.Position=UDim2.new(1,-12,0,6)
+    valLbl.BackgroundTransparency=1; valLbl.Font=Enum.Font.GothamBold; valLbl.TextSize=13
+    valLbl.TextXAlignment=Enum.TextXAlignment.Right; valLbl.ZIndex=4; valLbl.Parent=f
+    onTheme(function(p) valLbl.TextColor3=p end)
+
+    local function upd() valLbl.Text=tostring(tbl[key])..(suffix or "") end; upd()
+
+    local trackBg=Instance.new("Frame"); trackBg.Position=UDim2.new(0,14,0,32); trackBg.Size=UDim2.new(1,-28,0,5)
+    trackBg.BackgroundColor3=rgb(30,30,46); trackBg.BorderSizePixel=0; trackBg.ZIndex=4; trackBg.Parent=f; corner(trackBg,3)
+
+    local fill=Instance.new("Frame"); fill.Size=UDim2.new(math.clamp((tbl[key]-mn)/(mx-mn),0,1),0,1,0)
+    fill.BackgroundColor3=theme.primary; fill.BorderSizePixel=0; fill.ZIndex=5; fill.Parent=trackBg; corner(fill,3)
+    onTheme(function(p) fill.BackgroundColor3=p end)
+
+    local knob=Instance.new("Frame"); knob.AnchorPoint=Vector2.new(0.5,0.5)
+    knob.Size=UDim2.new(0,14,0,14); knob.Position=UDim2.new(math.clamp((tbl[key]-mn)/(mx-mn),0,1),0,0.5,0)
+    knob.BackgroundColor3=W3; knob.BorderSizePixel=0; knob.ZIndex=6; knob.Parent=trackBg; corner(knob,7)
+    local kSt=stroke(knob,theme.primary,1.5,0); onTheme(function(p) kSt.Color=p end)
+
+    local sliding=false
+    local hit=Instance.new("TextButton"); hit.Size=UDim2.new(1,0,0,24); hit.Position=UDim2.new(0,0,0.5,-12)
+    hit.BackgroundTransparency=1; hit.Text=""; hit.AutoButtonColor=false; hit.ZIndex=7; hit.Parent=trackBg
+    hit.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then sliding=true end end)
+    knob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then sliding=true end end)
+    conn(UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then sliding=false end end))
+    conn(UserInputService.InputChanged:Connect(function(i)
+        if not sliding or i.UserInputType~=Enum.UserInputType.MouseMovement then return end
+        if not trackBg.Parent then sliding=false; return end
+        local ap=trackBg.AbsolutePosition; local as=trackBg.AbsoluteSize
+        local rel=math.clamp((i.Position.X-ap.X)/as.X,0,1)
+        tbl[key]=math.floor(mn+rel*(mx-mn))
+        fill.Size=UDim2.new(rel,0,1,0); knob.Position=UDim2.new(rel,0,0.5,0)
+        upd(); if cb then cb(tbl[key]) end
+    end))
+    return f
+end
+
+-- Selector
+local function makeSelector(parent,name,key,tbl,options,order,cb)
+    local f=makeCard(parent,order,40)
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(0.44,0,1,0); lbl.Position=UDim2.new(0,14,0,0)
+    lbl.BackgroundTransparency=1; lbl.Text=name; lbl.Font=Enum.Font.GothamMedium; lbl.TextSize=13
+    lbl.TextColor3=theme.text; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.ZIndex=4; lbl.Parent=f
+
+    local valWrap=Instance.new("Frame"); valWrap.AnchorPoint=Vector2.new(1,0.5); valWrap.Position=UDim2.new(1,-11,0.5,0)
+    valWrap.Size=UDim2.new(0,118,0,26); valWrap.BackgroundColor3=rgb(20,20,32)
+    valWrap.BackgroundTransparency=0.30; valWrap.BorderSizePixel=0; valWrap.ZIndex=4; valWrap.Parent=f; corner(valWrap,8)
+    stroke(valWrap,W3,1,0.90)
+
+    local prev=Instance.new("TextButton"); prev.Size=UDim2.new(0,26,1,0)
+    prev.BackgroundTransparency=1; prev.Text="‹"; prev.Font=Enum.Font.GothamBold; prev.TextSize=18
+    prev.TextColor3=theme.sub; prev.ZIndex=5; prev.Parent=valWrap
+    prev.MouseEnter:Connect(function() tw(prev,0.12,{TextColor3=W3}) end)
+    prev.MouseLeave:Connect(function() tw(prev,0.16,{TextColor3=theme.sub}) end)
+
+    local valLbl=Instance.new("TextLabel"); valLbl.Position=UDim2.new(0,26,0,0); valLbl.Size=UDim2.new(1,-52,1,0)
+    valLbl.BackgroundTransparency=1; valLbl.Text=tbl[key]; valLbl.Font=Enum.Font.GothamBold; valLbl.TextSize=11
+    valLbl.ZIndex=5; valLbl.Parent=valWrap; onTheme(function(p) valLbl.TextColor3=p end)
+
+    local nxt=Instance.new("TextButton"); nxt.AnchorPoint=Vector2.new(1,0); nxt.Position=UDim2.new(1,0,0,0)
+    nxt.Size=UDim2.new(0,26,1,0); nxt.BackgroundTransparency=1; nxt.Text="›"
+    nxt.Font=Enum.Font.GothamBold; nxt.TextSize=18; nxt.TextColor3=theme.sub; nxt.ZIndex=5; nxt.Parent=valWrap
+    nxt.MouseEnter:Connect(function() tw(nxt,0.12,{TextColor3=W3}) end)
+    nxt.MouseLeave:Connect(function() tw(nxt,0.16,{TextColor3=theme.sub}) end)
+
+    local function getIdx() for i,v in ipairs(options) do if v==tbl[key] then return i end end; return 1 end
+    local function upd() valLbl.Text=tbl[key] end
+
+    prev.MouseButton1Click:Connect(function()
+        local i=getIdx(); i=i==1 and #options or i-1; tbl[key]=options[i]; upd(); if cb then cb(tbl[key]) end
+    end)
+    nxt.MouseButton1Click:Connect(function()
+        local i=getIdx(); i=i==#options and 1 or i+1; tbl[key]=options[i]; upd(); if cb then cb(tbl[key]) end
+    end)
+    return f
+end
+
+-- ══ NOTIFICATIONS ════════════════════════════════════════
 local notifHolder=Instance.new("Frame")
-notifHolder.Name="NotifHolder"
-notifHolder.AnchorPoint=Vector2.new(1,0)
-notifHolder.Position=UDim2.new(1,-12,0,12)
-notifHolder.Size=UDim2.new(0,268,0,600)
-notifHolder.BackgroundTransparency=1
-notifHolder.ZIndex=100
-notifHolder.Parent=SG
+notifHolder.Name="NotifHolder"; notifHolder.AnchorPoint=Vector2.new(1,0)
+notifHolder.Position=UDim2.new(1,-12,0,12); notifHolder.Size=UDim2.new(0,268,0,600)
+notifHolder.BackgroundTransparency=1; notifHolder.ZIndex=100; notifHolder.Parent=SG
 local nLayout=Instance.new("UIListLayout"); nLayout.Padding=UDim.new(0,7)
 nLayout.HorizontalAlignment=Enum.HorizontalAlignment.Right
 nLayout.VerticalAlignment=Enum.VerticalAlignment.Top
 nLayout.SortOrder=Enum.SortOrder.LayoutOrder
-nLayout.FillDirection=Enum.FillDirection.Vertical
-nLayout.Parent=notifHolder
+nLayout.FillDirection=Enum.FillDirection.Vertical; nLayout.Parent=notifHolder
 
 local activeNotifs={}
 
 local function dismissNotif(n)
     if n.dismissed then return end; n.dismissed=true
     for i,v in ipairs(activeNotifs) do if v==n then table.remove(activeNotifs,i); break end end
-    local f=n.f; if not f then return end
-    if n.shadow then tw(n.shadow,0.28,{BackgroundTransparency=1}) end
-    if n.glow then tw(n.glow,0.28,{BackgroundTransparency=1}) end
-    tw(f,0.36,{Position=UDim2.new(1,40,0,-60),Size=UDim2.new(0,260,0,0),BackgroundTransparency=1},Enum.EasingStyle.Quart,Enum.EasingDirection.In)
-    task.delay(0.40,function() if f and f.Parent then f:Destroy() end end)
+    tw(n.f,0.28,{Position=UDim2.new(1,280,0,0),BackgroundTransparency=1},Enum.EasingStyle.Quart)
+    tw(n.f,0.24,{Size=UDim2.new(0,258,0,0)},Enum.EasingStyle.Quart)
+    task.delay(0.32,function() if n.f and n.f.Parent then n.f:Destroy() end end)
 end
 
-local function makeNotifIcon(parent,iconType)
-    local ic=Instance.new("Frame")
-    ic.AnchorPoint=Vector2.new(0,0.5); ic.Position=UDim2.new(0,8,0.5,0)
-    ic.Size=UDim2.new(0,24,0,24)
-    ic.BackgroundColor3=theme.primary; ic.BackgroundTransparency=0.85
-    ic.BorderSizePixel=0; ic.ZIndex=104; ic.Parent=parent
-    corner(ic,6)
-    onTheme(function(p) ic.BackgroundColor3=p end)
-
-    if iconType=="copy" then
-        local s1=Instance.new("Frame"); s1.Size=UDim2.new(0,8,0,8); s1.Position=UDim2.new(0,3,0,7)
-        s1.BackgroundColor3=W3; s1.BackgroundTransparency=0; s1.BorderSizePixel=0; s1.ZIndex=105; s1.Parent=ic; corner(s1,2)
-        local s2=Instance.new("Frame"); s2.Size=UDim2.new(0,8,0,8); s2.Position=UDim2.new(0,9,0,3)
-        s2.BackgroundColor3=W3; s2.BackgroundTransparency=0.15; s2.BorderSizePixel=0; s2.ZIndex=105; s2.Parent=ic; corner(s2,2)
-        onTheme(function(p) s1.BackgroundColor3=p:Lerp(W3,0.9); s2.BackgroundColor3=p:Lerp(W3,0.75) end)
-    elseif iconType=="ok" or iconType=="save" then
-        local d=Instance.new("Frame"); d.AnchorPoint=Vector2.new(0.5,0.5); d.Position=UDim2.new(0.5,0,0.5,0)
-        d.Size=UDim2.new(0,9,0,9); d.Rotation=45; d.BackgroundColor3=W3; d.BackgroundTransparency=0
-        d.BorderSizePixel=0; d.ZIndex=105; d.Parent=ic; corner(d,2)
-        local dot=Instance.new("Frame"); dot.AnchorPoint=Vector2.new(0.5,0.5); dot.Position=UDim2.new(0.5,0,0.5,0)
-        dot.Size=UDim2.new(0,4,0,4); dot.BackgroundColor3=theme.primary; dot.BorderSizePixel=0
-        dot.ZIndex=106; dot.Parent=ic; corner(dot,2)
-        onTheme(function(p) dot.BackgroundColor3=p end)
-    elseif iconType=="warn" then
-        local bar2=Instance.new("Frame"); bar2.AnchorPoint=Vector2.new(0.5,0); bar2.Position=UDim2.new(0.5,0,0,3)
-        bar2.Size=UDim2.new(0,2,0,10); bar2.BackgroundColor3=W3; bar2.BackgroundTransparency=0
-        bar2.BorderSizePixel=0; bar2.ZIndex=105; bar2.Parent=ic; corner(bar2,1)
-        local dot2=Instance.new("Frame"); dot2.AnchorPoint=Vector2.new(0.5,0); dot2.Position=UDim2.new(0.5,0,0,16)
-        dot2.Size=UDim2.new(0,2,0,2); dot2.BackgroundColor3=W3; dot2.BackgroundTransparency=0
-        dot2.BorderSizePixel=0; dot2.ZIndex=105; dot2.Parent=ic; corner(dot2,1)
-    elseif iconType=="off" then
-        local dash=Instance.new("Frame"); dash.AnchorPoint=Vector2.new(0.5,0.5); dash.Position=UDim2.new(0.5,0,0.5,0)
-        dash.Size=UDim2.new(0,12,0,2); dash.BackgroundColor3=W3; dash.BackgroundTransparency=0
-        dash.BorderSizePixel=0; dash.ZIndex=105; dash.Parent=ic; corner(dash,1)
-    elseif iconType=="map" then
-        local circ=Instance.new("Frame"); circ.AnchorPoint=Vector2.new(0.5,0); circ.Position=UDim2.new(0.5,0,0,2)
-        circ.Size=UDim2.new(0,8,0,8); circ.BackgroundColor3=W3; circ.BackgroundTransparency=0
-        circ.BorderSizePixel=0; circ.ZIndex=105; circ.Parent=ic; corner(circ,4)
-        local pin=Instance.new("Frame"); pin.AnchorPoint=Vector2.new(0.5,0); pin.Position=UDim2.new(0.5,0,0,11)
-        pin.Size=UDim2.new(0,2,0,7); pin.BackgroundColor3=W3; pin.BackgroundTransparency=0.2
-        pin.BorderSizePixel=0; pin.ZIndex=105; pin.Parent=ic; corner(pin,1)
-    elseif iconType=="resize" then
-        local br1=Instance.new("Frame"); br1.Size=UDim2.new(0,6,0,2); br1.Position=UDim2.new(0,2,0,3)
-        br1.BackgroundColor3=W3; br1.BackgroundTransparency=0; br1.BorderSizePixel=0; br1.ZIndex=105; br1.Parent=ic
-        local br2=Instance.new("Frame"); br2.Size=UDim2.new(0,2,0,6); br2.Position=UDim2.new(0,2,0,3)
-        br2.BackgroundColor3=W3; br2.BackgroundTransparency=0; br2.BorderSizePixel=0; br2.ZIndex=105; br2.Parent=ic
-        local br3=Instance.new("Frame"); br3.Size=UDim2.new(0,6,0,2); br3.Position=UDim2.new(0,14,0,18)
-        br3.BackgroundColor3=W3; br3.BackgroundTransparency=0; br3.BorderSizePixel=0; br3.ZIndex=105; br3.Parent=ic
-        local br4=Instance.new("Frame"); br4.Size=UDim2.new(0,2,0,6); br4.Position=UDim2.new(0,18,0,14)
-        br4.BackgroundColor3=W3; br4.BackgroundTransparency=0; br4.BorderSizePixel=0; br4.ZIndex=105; br4.Parent=ic
-    else
-        local dot3=Instance.new("Frame"); dot3.AnchorPoint=Vector2.new(0.5,0.5); dot3.Position=UDim2.new(0.5,0,0.5,0)
-        dot3.Size=UDim2.new(0,6,0,6); dot3.BackgroundColor3=W3; dot3.BackgroundTransparency=0
-        dot3.BorderSizePixel=0; dot3.ZIndex=105; dot3.Parent=ic; corner(dot3,3)
-    end
-    return ic
-end
-
-local function pickIcon(title,desc,isSystem)
+local function pickIcon(title)
     local t=title:lower()
     if t:find("cop") then return "copy"
     elseif t:find("sav") then return "save"
-    elseif t:find("reset") or t:find("restor") then return "warn"
+    elseif t:find("reset") or t:find("warn") then return "warn"
     elseif t:find("map") then return "map"
     elseif t:find("resize") or t:find("size") then return "resize"
-    elseif t:find("disab") or t:find("off") or t:find("silence") then return "off"
-    elseif t:find("enabl") or t:find("welcom") or t:find("load") or t:find("appli") then return "ok"
-    elseif t:find("warn") then return "warn"
+    elseif t:find("disab") or t:find("off") or t:find("silen") then return "off"
+    elseif t:find("enabl") or t:find("welcom") or t:find("load") or t:find("appli") or t:find("aim") or t:find("esp") then return "ok"
     else return "info" end
+end
+
+local function makeNotifIcon(parent,iconType)
+    local ic=Instance.new("Frame"); ic.AnchorPoint=Vector2.new(0,0.5); ic.Position=UDim2.new(0,12,0.5,0)
+    ic.Size=UDim2.new(0,28,0,28); ic.BackgroundColor3=theme.primary; ic.BackgroundTransparency=0.78
+    ic.BorderSizePixel=0; ic.ZIndex=104; ic.Parent=parent; corner(ic,8)
+    onTheme(function(p) ic.BackgroundColor3=p end)
+    if iconType=="copy" then
+        local s1=Instance.new("Frame"); s1.Size=UDim2.new(0,10,0,10); s1.Position=UDim2.new(0,4,0,8); s1.BackgroundColor3=W3; s1.BackgroundTransparency=0; s1.BorderSizePixel=0; s1.ZIndex=105; s1.Parent=ic; corner(s1,3)
+        local s2=Instance.new("Frame"); s2.Size=UDim2.new(0,10,0,10); s2.Position=UDim2.new(0,10,0,4); s2.BackgroundColor3=W3; s2.BackgroundTransparency=0.15; s2.BorderSizePixel=0; s2.ZIndex=105; s2.Parent=ic; corner(s2,3)
+    elseif iconType=="ok" or iconType=="save" then
+        local d=Instance.new("Frame"); d.AnchorPoint=Vector2.new(0.5,0.5); d.Position=UDim2.new(0.5,0,0.5,0); d.Size=UDim2.new(0,11,0,11); d.Rotation=45; d.BackgroundColor3=W3; d.BackgroundTransparency=0; d.BorderSizePixel=0; d.ZIndex=105; d.Parent=ic; corner(d,2)
+        local dot=Instance.new("Frame"); dot.AnchorPoint=Vector2.new(0.5,0.5); dot.Position=UDim2.new(0.5,0,0.5,0); dot.Size=UDim2.new(0,5,0,5); dot.BackgroundColor3=theme.primary; dot.BorderSizePixel=0; dot.ZIndex=106; dot.Parent=ic; corner(dot,3); onTheme(function(p) dot.BackgroundColor3=p end)
+    elseif iconType=="warn" then
+        local bar2=Instance.new("Frame"); bar2.AnchorPoint=Vector2.new(0.5,0); bar2.Position=UDim2.new(0.5,0,0,4); bar2.Size=UDim2.new(0,3,0,12); bar2.BackgroundColor3=W3; bar2.BackgroundTransparency=0; bar2.BorderSizePixel=0; bar2.ZIndex=105; bar2.Parent=ic; corner(bar2,2)
+        local dot2=Instance.new("Frame"); dot2.AnchorPoint=Vector2.new(0.5,0); dot2.Position=UDim2.new(0.5,0,0,19); dot2.Size=UDim2.new(0,3,0,3); dot2.BackgroundColor3=W3; dot2.BackgroundTransparency=0; dot2.BorderSizePixel=0; dot2.ZIndex=105; dot2.Parent=ic; corner(dot2,2)
+    elseif iconType=="off" then
+        local dash=Instance.new("Frame"); dash.AnchorPoint=Vector2.new(0.5,0.5); dash.Position=UDim2.new(0.5,0,0.5,0); dash.Size=UDim2.new(0,14,0,3); dash.BackgroundColor3=W3; dash.BackgroundTransparency=0; dash.BorderSizePixel=0; dash.ZIndex=105; dash.Parent=ic; corner(dash,2)
+    elseif iconType=="map" then
+        local circ=Instance.new("Frame"); circ.AnchorPoint=Vector2.new(0.5,0); circ.Position=UDim2.new(0.5,0,0,3); circ.Size=UDim2.new(0,10,0,10); circ.BackgroundColor3=W3; circ.BackgroundTransparency=0; circ.BorderSizePixel=0; circ.ZIndex=105; circ.Parent=ic; corner(circ,5)
+        local pin=Instance.new("Frame"); pin.AnchorPoint=Vector2.new(0.5,0); pin.Position=UDim2.new(0.5,0,0,13); pin.Size=UDim2.new(0,3,0,8); pin.BackgroundColor3=W3; pin.BackgroundTransparency=0.2; pin.BorderSizePixel=0; pin.ZIndex=105; pin.Parent=ic; corner(pin,2)
+    elseif iconType=="resize" then
+        local br1=Instance.new("Frame"); br1.Size=UDim2.new(0,7,0,2); br1.Position=UDim2.new(0,3,0,4); br1.BackgroundColor3=W3; br1.BackgroundTransparency=0; br1.BorderSizePixel=0; br1.ZIndex=105; br1.Parent=ic
+        local br2=Instance.new("Frame"); br2.Size=UDim2.new(0,2,0,7); br2.Position=UDim2.new(0,3,0,4); br2.BackgroundColor3=W3; br2.BackgroundTransparency=0; br2.BorderSizePixel=0; br2.ZIndex=105; br2.Parent=ic
+        local br3=Instance.new("Frame"); br3.Size=UDim2.new(0,7,0,2); br3.Position=UDim2.new(0,16,0,21); br3.BackgroundColor3=W3; br3.BackgroundTransparency=0; br3.BorderSizePixel=0; br3.ZIndex=105; br3.Parent=ic
+        local br4=Instance.new("Frame"); br4.Size=UDim2.new(0,2,0,7); br4.Position=UDim2.new(0,21,0,16); br4.BackgroundColor3=W3; br4.BackgroundTransparency=0; br4.BorderSizePixel=0; br4.ZIndex=105; br4.Parent=ic
+    else
+        local dot3=Instance.new("Frame"); dot3.AnchorPoint=Vector2.new(0.5,0.5); dot3.Position=UDim2.new(0.5,0,0.5,0); dot3.Size=UDim2.new(0,8,0,8); dot3.BackgroundColor3=W3; dot3.BackgroundTransparency=0; dot3.BorderSizePixel=0; dot3.ZIndex=105; dot3.Parent=ic; corner(dot3,4)
+    end
+    return ic
 end
 
 local function notify(title,desc,dur,isSystem)
@@ -618,227 +639,58 @@ local function notify(title,desc,dur,isSystem)
     dur=dur or 3.5
     if #activeNotifs>=4 then dismissNotif(activeNotifs[1]) end
     local n={}
-
-    -- Glass container — anchored top-right, grows inward from corner
-    local f=Instance.new("Frame")
-    f.Name="Notif"
-    f.AnchorPoint=Vector2.new(1,0)
-    f.Size=UDim2.new(0,260,0,0)
-    f.Position=UDim2.new(1,40,0,-60)
-    f.BackgroundColor3=rgb(12,12,20)
-    f.BackgroundTransparency=1
-    f.BorderSizePixel=0
-    f.ZIndex=101
-    f.ClipsDescendants=false
-    f.Parent=notifHolder
-    corner(f,14)
-
-    -- Soft shadow behind (bleeds outside)
-    local shadow=Instance.new("Frame")
-    shadow.Size=UDim2.new(1,10,1,10)
-    shadow.Position=UDim2.new(0,-5,0,-5)
-    shadow.BackgroundColor3=BK
-    shadow.BackgroundTransparency=1
-    shadow.BorderSizePixel=0
-    shadow.ZIndex=100
-    shadow.Parent=f
-    corner(shadow,18)
-
-    -- Glass edge stroke (cold, subtle)
-    local fst=Instance.new("UIStroke")
-    fst.Color=rgb(55,55,72)
-    fst.Thickness=1
-    fst.Transparency=0.78
-    fst.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
-    fst.Parent=f
-
-    -- Inner top highlight (glass reflection)
-    local highlight=Instance.new("Frame")
-    highlight.Size=UDim2.new(1,-20,0,1)
-    highlight.Position=UDim2.new(0,10,0,1)
-    highlight.BackgroundColor3=W3
-    highlight.BackgroundTransparency=0.94
-    highlight.BorderSizePixel=0
-    highlight.ZIndex=102
-    highlight.Parent=f
-
-    -- Inner bottom depth (volume shadow)
-    local depth=Instance.new("Frame")
-    depth.Size=UDim2.new(1,-20,0,1)
-    depth.Position=UDim2.new(0,10,1,-2)
-    depth.BackgroundColor3=BK
-    depth.BackgroundTransparency=0.94
-    depth.BorderSizePixel=0
-    depth.ZIndex=102
-    depth.Parent=f
-
-    -- Theme tinted inner glow (subtle volume)
-    local glow=Instance.new("Frame")
-    glow.Size=UDim2.new(1,0,1,0)
-    glow.BackgroundColor3=theme.primary
-    glow.BackgroundTransparency=1
-    glow.BorderSizePixel=0
-    glow.ZIndex=101
-    glow.Parent=f
-    corner(glow,14)
-    onTheme(function(p) glow.BackgroundColor3=p end)
-
-    -- Icon
-    local iconType=pickIcon(title,desc,isSystem)
-    local iconFrame=makeNotifIcon(f,iconType)
-
-    -- Text layout math:
-    -- Icon: X=8, W=24 → ends at 32
-    -- Gap: 8px → text starts at 40
-    -- Close btn: W=18, Position=1,-22 → left edge at 238
-    -- Text ends at: 238-8=230
-    -- Text width: 230-40=190px
-    local TEXT_X=40
-    local TEXT_W=190
-
-    -- Title
-    local tl=Instance.new("TextLabel")
-    tl.Size=UDim2.new(0,TEXT_W,0,16)
-    tl.Position=UDim2.new(0,TEXT_X,0,9)
-    tl.BackgroundTransparency=1
-    tl.Text=title
-    tl.Font=Enum.Font.GothamBold
-    tl.TextSize=12
-    tl.TextColor3=W3
-    tl.TextXAlignment=Enum.TextXAlignment.Left
-    tl.TextWrapped=false
-    tl.TextTruncate=Enum.TextTruncate.AtEnd
-    tl.ZIndex=103
-    tl.Parent=f
-
-    -- Description
-    local dl=Instance.new("TextLabel")
-    dl.Size=UDim2.new(0,TEXT_W,0,22)
-    dl.Position=UDim2.new(0,TEXT_X,0,25)
-    dl.BackgroundTransparency=1
-    dl.Text=desc
-    dl.TextWrapped=true
-    dl.Font=Enum.Font.Gotham
-    dl.TextSize=11
-    dl.TextColor3=theme.sub
-    dl.TextXAlignment=Enum.TextXAlignment.Left
-    dl.TextYAlignment=Enum.TextYAlignment.Top
-    dl.ZIndex=103
-    dl.Parent=f
-
-    -- Close button
-    local xb=Instance.new("TextButton")
-    xb.Size=UDim2.new(0,18,0,18)
-    xb.Position=UDim2.new(1,-22,0,8)
-    xb.BackgroundColor3=rgb(28,28,40)
-    xb.BackgroundTransparency=0.30
-    xb.Text="×"
-    xb.Font=Enum.Font.GothamBold
-    xb.TextSize=12
-    xb.TextColor3=theme.sub
-    xb.ZIndex=104
-    xb.Parent=f
-    corner(xb,9)
+    local f=Instance.new("Frame"); f.Name="Notif"; f.Size=UDim2.new(0,258,0,0); f.Position=UDim2.new(1,280,0,0)
+    f.BackgroundColor3=rgb(12,12,18); f.BackgroundTransparency=0; f.BorderSizePixel=0; f.ZIndex=101; f.ClipsDescendants=true; f.Parent=notifHolder; corner(f,12)
+    local fst=stroke(f,W3,1.2,0); local fsg=Instance.new("UIGradient"); fsg.Rotation=95
+    onTheme(function(p) fsg.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p:Lerp(W3,0.14)),ColorSequenceKeypoint.new(1,p:Lerp(BK,0.58))}) end); fsg.Parent=fst
+    local topAccent=Instance.new("Frame"); topAccent.Size=UDim2.new(1,0,0,2); topAccent.BackgroundColor3=W3; topAccent.BackgroundTransparency=0; topAccent.BorderSizePixel=0; topAccent.ZIndex=102; topAccent.Parent=f
+    local taG=Instance.new("UIGradient"); taG.Parent=topAccent
+    onTheme(function(p) taG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,BK),ColorSequenceKeypoint.new(0.15,p),ColorSequenceKeypoint.new(0.85,p),ColorSequenceKeypoint.new(1,BK)}) end)
+    local iconFrame=makeNotifIcon(f,pickIcon(title))
+    local TX=48
+    local tl=Instance.new("TextLabel"); tl.Size=UDim2.new(1,-(TX+30),0,20); tl.Position=UDim2.new(0,TX,0,11); tl.BackgroundTransparency=1; tl.Text=title; tl.Font=Enum.Font.GothamBold; tl.TextSize=13; tl.TextColor3=W3; tl.TextXAlignment=Enum.TextXAlignment.Left; tl.ZIndex=103; tl.Parent=f
+    local dl=Instance.new("TextLabel"); dl.Size=UDim2.new(1,-(TX+10),0,28); dl.Position=UDim2.new(0,TX,0,30); dl.BackgroundTransparency=1; dl.Text=desc; dl.TextWrapped=true; dl.Font=Enum.Font.Gotham; dl.TextSize=11; dl.TextColor3=theme.sub; dl.TextXAlignment=Enum.TextXAlignment.Left; dl.TextYAlignment=Enum.TextYAlignment.Top; dl.ZIndex=103; dl.Parent=f
+    local xb=Instance.new("TextButton"); xb.Size=UDim2.new(0,20,0,20); xb.Position=UDim2.new(1,-27,0,9); xb.BackgroundColor3=rgb(28,28,40); xb.BackgroundTransparency=0.30; xb.Text="×"; xb.Font=Enum.Font.GothamBold; xb.TextSize=13; xb.TextColor3=theme.sub; xb.ZIndex=104; xb.Parent=f; corner(xb,10)
     xb.MouseEnter:Connect(function() tw(xb,0.12,{BackgroundTransparency=0,TextColor3=W3}) end)
     xb.MouseLeave:Connect(function() tw(xb,0.16,{BackgroundTransparency=0.30,TextColor3=theme.sub}) end)
-
-    -- Progress bar — heavily rounded, small, centered at bottom with margins
-    local barBg=Instance.new("Frame")
-    barBg.AnchorPoint=Vector2.new(0.5,1)
-    barBg.Position=UDim2.new(0.5,0,1,-6)
-    barBg.Size=UDim2.new(1,-24,0,4)
-    barBg.BackgroundColor3=rgb(22,22,32)
-    barBg.BackgroundTransparency=0.20
-    barBg.BorderSizePixel=0
-    barBg.ZIndex=103
-    barBg.Parent=f
-    corner(barBg,999)
-
-    local bar=Instance.new("Frame")
-    bar.Size=UDim2.new(1,0,1,0)
-    bar.BackgroundColor3=theme.primary
-    bar.BorderSizePixel=0
-    bar.ZIndex=104
-    bar.Parent=barBg
-    corner(bar,999)
-    onTheme(function(p) bar.BackgroundColor3=p end)
-
-    n.f=f; n.shadow=shadow; n.glow=glow; table.insert(activeNotifs,n)
-
-    -- Animate in: slide from top-right corner + expand
-    task.spawn(function()
-        tw(shadow,0.45,{BackgroundTransparency=0.72})
-        tw(f,0.40,{BackgroundTransparency=0.06})
-        tw(glow,0.50,{BackgroundTransparency=0.96})
-        twBack(f,0.48,{Size=UDim2.new(0,260,0,64),Position=UDim2.new(1,0,0,0)})
-    end)
-
-    -- Icon pop
-    iconFrame.Size=UDim2.new(0,8,0,8)
-    iconFrame.BackgroundTransparency=1
-    task.delay(0.14,function()
-        if iconFrame and iconFrame.Parent then
-            twBack(iconFrame,0.34,{Size=UDim2.new(0,24,0,24),BackgroundTransparency=0.85})
-        end
-    end)
-
-    -- Progress bar shrink
+    local barBg=Instance.new("Frame"); barBg.AnchorPoint=Vector2.new(0,1); barBg.Position=UDim2.new(0,0,1,0); barBg.Size=UDim2.new(1,0,0,3); barBg.BackgroundColor3=rgb(22,22,32); barBg.BorderSizePixel=0; barBg.ZIndex=103; barBg.Parent=f; corner(barBg,2)
+    local bar=Instance.new("Frame"); bar.Size=UDim2.new(1,0,1,0); bar.BackgroundColor3=theme.primary; bar.BorderSizePixel=0; bar.ZIndex=104; bar.Parent=barBg; corner(bar,2); onTheme(function(p) bar.BackgroundColor3=p end)
+    n.f=f; table.insert(activeNotifs,n)
+    task.spawn(function() twBack(f,0.36,{Size=UDim2.new(0,258,0,72)}); task.wait(0.12); tw(f,0.40,{Position=UDim2.new(1,0,0,0)},Enum.EasingStyle.Quart) end)
+    iconFrame.Size=UDim2.new(0,10,0,10); iconFrame.BackgroundTransparency=1
+    task.delay(0.18,function() if iconFrame and iconFrame.Parent then twBack(iconFrame,0.36,{Size=UDim2.new(0,28,0,28),BackgroundTransparency=0.78}) end end)
     twLinear(bar,dur,{Size=UDim2.new(0,0,1,0)})
-
-    -- Dismiss handlers
-    f.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dismissNotif(n) end
-    end)
+    f.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dismissNotif(n) end end)
     xb.MouseButton1Click:Connect(function() dismissNotif(n) end)
     task.delay(dur,function() dismissNotif(n) end)
     return n
 end
 
--- ═══════════════════════════════════
--- CONFIRM DIALOG
--- ═══════════════════════════════════
+-- ══ CONFIRM DIALOG ═══════════════════════════════════════
 local function showConfirm(question,desc,onYes,opts)
     opts=opts or {}
-    local dim=Instance.new("Frame"); dim.Size=UDim2.new(1,0,1,0); dim.BackgroundColor3=BK
-    dim.BackgroundTransparency=0.52; dim.BorderSizePixel=0; dim.ZIndex=80; dim.Parent=SG
-    local box=Instance.new("Frame"); box.AnchorPoint=Vector2.new(0.5,0.5); box.Position=UDim2.new(0.5,0,0.5,0)
-    box.Size=UDim2.new(0,0,0,0); box.BackgroundColor3=rgb(11,11,17); box.ZIndex=81; box.Parent=dim; corner(box,16)
-    local bst=stroke(box,W3,1.4,0.10)
-    local bsg=Instance.new("UIGradient"); bsg.Rotation=130
-    onTheme(function(p) bsg.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p:Lerp(W3,0.14)),ColorSequenceKeypoint.new(1,p:Lerp(BK,0.65))}) end)
-    bsg.Parent=bst
-    local q=Instance.new("TextLabel"); q.Size=UDim2.new(1,-24,0,30); q.Position=UDim2.new(0,12,0,18)
-    q.BackgroundTransparency=1; q.Text=question; q.Font=Enum.Font.GothamBold; q.TextSize=17; q.TextColor3=W3; q.ZIndex=82; q.Parent=box
-    local d=Instance.new("TextLabel"); d.Size=UDim2.new(1,-24,0,20); d.Position=UDim2.new(0,12,0,50)
-    d.BackgroundTransparency=1; d.Text=desc or ""; d.Font=Enum.Font.Gotham; d.TextSize=11; d.TextColor3=theme.sub; d.ZIndex=82; d.Parent=box
+    local dim=Instance.new("Frame"); dim.Size=UDim2.new(1,0,1,0); dim.BackgroundColor3=BK; dim.BackgroundTransparency=0.52; dim.BorderSizePixel=0; dim.ZIndex=80; dim.Parent=SG
+    local box=Instance.new("Frame"); box.AnchorPoint=Vector2.new(0.5,0.5); box.Position=UDim2.new(0.5,0,0.5,0); box.Size=UDim2.new(0,0,0,0); box.BackgroundColor3=rgb(11,11,17); box.ZIndex=81; box.Parent=dim; corner(box,16)
+    local bst=stroke(box,W3,1.4,0.10); local bsg=Instance.new("UIGradient"); bsg.Rotation=130; onTheme(function(p) bsg.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p:Lerp(W3,0.14)),ColorSequenceKeypoint.new(1,p:Lerp(BK,0.65))}) end); bsg.Parent=bst
+    local q=Instance.new("TextLabel"); q.Size=UDim2.new(1,-24,0,30); q.Position=UDim2.new(0,12,0,18); q.BackgroundTransparency=1; q.Text=question; q.Font=Enum.Font.GothamBold; q.TextSize=17; q.TextColor3=W3; q.ZIndex=82; q.Parent=box
+    local d=Instance.new("TextLabel"); d.Size=UDim2.new(1,-24,0,20); d.Position=UDim2.new(0,12,0,50); d.BackgroundTransparency=1; d.Text=desc or ""; d.Font=Enum.Font.Gotham; d.TextSize=11; d.TextColor3=theme.sub; d.ZIndex=82; d.Parent=box
     local function mkBtn(t,col,xp)
-        local b=Instance.new("TextButton"); b.Size=UDim2.new(0.5,-16,0,34); b.Position=xp
-        b.BackgroundColor3=col; b.Text=t; b.Font=Enum.Font.GothamBold; b.TextSize=13; b.TextColor3=W3
-        b.AutoButtonColor=false; b.ZIndex=82; b.Parent=box; corner(b,10)
-        b.MouseEnter:Connect(function() tw(b,0.12,{BackgroundColor3=col:Lerp(W3,0.18)}) end)
-        b.MouseLeave:Connect(function() tw(b,0.16,{BackgroundColor3=col}) end)
-        b.MouseButton1Down:Connect(function() tw(b,0.07,{BackgroundColor3=col:Lerp(BK,0.16)},Enum.EasingStyle.Quad) end)
-        b.MouseButton1Up:Connect(function() tw(b,0.13,{BackgroundColor3=col}) end)
-        return b
+        local b=Instance.new("TextButton"); b.Size=UDim2.new(0.5,-16,0,34); b.Position=xp; b.BackgroundColor3=col; b.Text=t; b.Font=Enum.Font.GothamBold; b.TextSize=13; b.TextColor3=W3; b.AutoButtonColor=false; b.ZIndex=82; b.Parent=box; corner(b,10)
+        b.MouseEnter:Connect(function() tw(b,0.12,{BackgroundColor3=col:Lerp(W3,0.18)}) end); b.MouseLeave:Connect(function() tw(b,0.16,{BackgroundColor3=col}) end)
+        b.MouseButton1Down:Connect(function() tw(b,0.07,{BackgroundColor3=col:Lerp(BK,0.16)},Enum.EasingStyle.Quad) end); b.MouseButton1Up:Connect(function() tw(b,0.13,{BackgroundColor3=col}) end); return b
     end
     local yes=mkBtn(opts.yesText or "Confirm",rgb(40,168,74),UDim2.new(0,12,1,-46))
-    local no =mkBtn(opts.noText  or "Cancel", rgb(180,44,50),UDim2.new(0.5,4,1,-46))
+    local no=mkBtn(opts.noText or "Cancel",rgb(180,44,50),UDim2.new(0.5,4,1,-46))
     twBack(box,0.42,{Size=UDim2.new(0,272,0,148)})
-    local function closeDlg()
-        tw(box,0.22,{Size=UDim2.new(0,0,0,0)},Enum.EasingStyle.Quart)
-        tw(dim,0.22,{BackgroundTransparency=1}); task.delay(0.24,function() dim:Destroy() end)
-    end
+    local function closeDlg() tw(box,0.22,{Size=UDim2.new(0,0,0,0)},Enum.EasingStyle.Quart); tw(dim,0.22,{BackgroundTransparency=1}); task.delay(0.24,function() dim:Destroy() end) end
     yes.MouseButton1Click:Connect(function() closeDlg(); if onYes then onYes() end end)
     no.MouseButton1Click:Connect(function() closeDlg(); if opts.onNo then opts.onNo() end end)
     if not opts.noDismiss then
-        local db=Instance.new("TextButton"); db.Size=UDim2.new(1,0,1,0); db.BackgroundTransparency=1
-        db.Text=""; db.ZIndex=80; db.Parent=dim; db.MouseButton1Click:Connect(closeDlg)
+        local db=Instance.new("TextButton"); db.Size=UDim2.new(1,0,1,0); db.BackgroundTransparency=1; db.Text=""; db.ZIndex=80; db.Parent=dim; db.MouseButton1Click:Connect(closeDlg)
     end
 end
 
--- ═══════════════════════════════════
--- SECTION SYSTEM  (no overlap, CD)
--- ═══════════════════════════════════
+-- ══ SECTION SYSTEM ═══════════════════════════════════════
 local function makePage(name)
     local page=Instance.new("Frame"); page.Size=UDim2.new(1,0,1,0)
     page.BackgroundTransparency=1; page.Visible=false; page.ZIndex=3; page.Parent=content
@@ -850,11 +702,11 @@ local function makePage(name)
     local layout=Instance.new("UIListLayout"); layout.Padding=UDim.new(0,7); layout.SortOrder=Enum.SortOrder.LayoutOrder; layout.Parent=scroll
     sections[name]={page=page,scroll=scroll}; return sections[name]
 end
-local NAV_ORDER={"Home","Main"}
+
+local NAV_ORDER={"Home","Aim","ESP"}
 for _,nm in ipairs(NAV_ORDER) do makePage(nm) end
 makePage("Settings")
 
--- Animate items into view (staggered slide from left)
 local function animateItems(scroll)
     local children={}
     for _,c in ipairs(scroll:GetChildren()) do
@@ -865,42 +717,30 @@ local function animateItems(scroll)
         local origPos=child.Position
         child.Position=UDim2.new(origPos.X.Scale-0.10,origPos.X.Offset,origPos.Y.Scale,origPos.Y.Offset)
         for _,d in ipairs(child:GetDescendants()) do
-            if d:IsA("TextLabel") or d:IsA("TextButton") then
-                pcall(function() d.TextTransparency=0.8 end)
-            end
+            if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() d.TextTransparency=0.8 end) end
         end
         task.delay((i-1)*0.045,function()
             if child and child.Parent then
                 tw(child,0.32,{Position=origPos},Enum.EasingStyle.Quart)
                 for _,d in ipairs(child:GetDescendants()) do
-                    if d:IsA("TextLabel") or d:IsA("TextButton") then
-                        pcall(function() tw(d,0.24,{TextTransparency=0}) end)
-                    end
+                    if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.24,{TextTransparency=0}) end) end
                 end
             end
         end)
     end
 end
 
--- Show section (used internally, no CD here)
 local function showSection(name)
-    for sn,sec in pairs(sections) do
-        sec.page.Visible=(sn==name)
-    end
+    for sn,sec in pairs(sections) do sec.page.Visible=(sn==name) end
     if sections[name] then animateItems(sections[name].scroll) end
 end
 
--- Public select with CD and no-overlap
 local function selectSection(name)
     if navCooldown then return end
     if currentSection==name and not settingsOpen then return end
-    navCooldown=true
-    settingsOpen=false
-    currentSection=name
+    navCooldown=true; settingsOpen=false; currentSection=name
     showSection(name)
-    -- gear button color
     tw(gearBtn,0.18,{TextColor3=theme.sub})
-    -- nav button states
     for bn,data in pairs(navBtns) do
         local active=(bn==name)
         tw(data.btn,0.20,{BackgroundTransparency=active and 0.68 or 1})
@@ -916,10 +756,8 @@ local function selectSection(name)
     task.delay(0.30,function() navCooldown=false end)
 end
 
--- ═══════════════════════════════════
--- NAV BUTTONS
--- ═══════════════════════════════════
-local ICONS={Home="⌂",Main="◆"}
+-- ══ NAV BUTTONS ══════════════════════════════════════════
+local ICONS={Home="⌂",Aim="◆",ESP="◎"}
 local function makeNavBtn(name,order)
     local btn=Instance.new("TextButton"); btn.Size=UDim2.new(1,0,0,40); btn.BackgroundColor3=W3
     btn.BackgroundTransparency=1; btn.AutoButtonColor=false; btn.Text=""; btn.LayoutOrder=order
@@ -944,16 +782,14 @@ local function makeNavBtn(name,order)
     btn.MouseButton1Down:Connect(function() tw(btn,0.07,{Size=UDim2.new(1,-4,0,36)},Enum.EasingStyle.Quad) end)
     btn.MouseButton1Up:Connect(function() twBack(btn,0.18,{Size=UDim2.new(1,0,0,40)}) end)
     btn.MouseButton1Click:Connect(function() selectSection(name) end)
-    navBtns[name]={btn=btn,icon=icon,lbl=lbl,line=line}
-    return btn
+    navBtns[name]={btn=btn,icon=icon,lbl=lbl,line=line}; return btn
 end
 for i,name in ipairs(NAV_ORDER) do makeNavBtn(name,i) end
 
--- Nav collapse
 local NAV_OW,NAV_CW=NAV_W,44; local navCollapsed=false
 local colBtn=Instance.new("TextButton")
 colBtn.AnchorPoint=Vector2.new(0.5,1); colBtn.Position=UDim2.new(0.5,0,1,-10)
-colBtn.Size=UDim2.new(1,-12,0,22); colBtn.BackgroundColor3=rgb(18,18,28); colBtn.BackgroundTransparency=0.14
+colBtn.Size=UDim2.new(0,28,0,22); colBtn.BackgroundColor3=rgb(18,18,28); colBtn.BackgroundTransparency=0.14
 colBtn.Text="‹"; colBtn.Font=Enum.Font.GothamBold; colBtn.TextSize=17; colBtn.TextColor3=theme.sub
 colBtn.AutoButtonColor=false; colBtn.ZIndex=5; colBtn.Parent=nav; corner(colBtn,8); stroke(colBtn,W3,1,0.90)
 local function setNav(col)
@@ -979,52 +815,249 @@ do
     local links={{"📢  t.me/VanezyScripts","https://t.me/VanezyScripts"},{"👤  @vanezy","@vanezy"},{"🤝  t.me/ScriptRobox","https://t.me/ScriptRobox"}}
     for i,data in ipairs(links) do
         local row=makeCard(sc,2+i,36)
-        local dot=Instance.new("Frame"); dot.AnchorPoint=Vector2.new(0,0.5); dot.Position=UDim2.new(0,10,0.5,0)
-        dot.Size=UDim2.new(0,4,0,4); dot.BorderSizePixel=0; dot.ZIndex=4; dot.Parent=row; corner(dot,2)
+        local dot=Instance.new("Frame"); dot.AnchorPoint=Vector2.new(0,0.5); dot.Position=UDim2.new(0,10,0.5,0); dot.Size=UDim2.new(0,4,0,4); dot.BorderSizePixel=0; dot.ZIndex=4; dot.Parent=row; corner(dot,2)
         onTheme(function(p) dot.BackgroundColor3=p end)
-        local b=Instance.new("TextButton"); b.Size=UDim2.new(1,-24,1,0); b.Position=UDim2.new(0,20,0,0)
-        b.BackgroundTransparency=1; b.Text=data[1]; b.Font=Enum.Font.GothamMedium; b.TextSize=12
-        b.TextColor3=rgb(100,170,255); b.TextXAlignment=Enum.TextXAlignment.Left; b.TextTruncate=Enum.TextTruncate.AtEnd; b.ZIndex=4; b.Parent=row
-        b.MouseEnter:Connect(function() tw(b,0.12,{TextColor3=rgb(155,210,255)}) end)
-        b.MouseLeave:Connect(function() tw(b,0.16,{TextColor3=rgb(100,170,255)}) end)
+        local b=Instance.new("TextButton"); b.Size=UDim2.new(1,-24,1,0); b.Position=UDim2.new(0,20,0,0); b.BackgroundTransparency=1; b.Text=data[1]; b.Font=Enum.Font.GothamMedium; b.TextSize=12; b.TextColor3=rgb(100,170,255); b.TextXAlignment=Enum.TextXAlignment.Left; b.TextTruncate=Enum.TextTruncate.AtEnd; b.ZIndex=4; b.Parent=row
+        b.MouseEnter:Connect(function() tw(b,0.12,{TextColor3=rgb(155,210,255)}) end); b.MouseLeave:Connect(function() tw(b,0.16,{TextColor3=rgb(100,170,255)}) end)
         b.MouseButton1Click:Connect(function() safe(_sc,data[2]); notify("Copied!",data[2],3,true) end)
         if i<#links then makeSep(sc,2+i+0.5) end
     end
-    local warn=makeCard(sc,20,50)
-    warn.BackgroundColor3=rgb(30,22,8); warn.BackgroundTransparency=0.10
-    local wi=Instance.new("TextLabel"); wi.Position=UDim2.new(0,10,0,0); wi.Size=UDim2.new(0,26,1,0)
-    wi.BackgroundTransparency=1; wi.Text="⚠"; wi.TextSize=17; wi.Font=Enum.Font.GothamBold; wi.TextColor3=rgb(244,182,44); wi.ZIndex=4; wi.Parent=warn
-    local wl=Instance.new("TextLabel"); wl.Size=UDim2.new(1,-50,1,0); wl.Position=UDim2.new(0,38,0,0)
-    wl.BackgroundTransparency=1; wl.Text="Early build — bugs may occur. Updates coming!"
-    wl.TextWrapped=true; wl.Font=Enum.Font.GothamMedium; wl.TextSize=11; wl.TextColor3=rgb(210,190,126); wl.ZIndex=4; wl.Parent=warn
+    local warn=makeCard(sc,20,50); warn.BackgroundColor3=rgb(30,22,8); warn.BackgroundTransparency=0.10
+    local wi=Instance.new("TextLabel"); wi.Position=UDim2.new(0,10,0,0); wi.Size=UDim2.new(0,26,1,0); wi.BackgroundTransparency=1; wi.Text="⚠"; wi.TextSize=17; wi.Font=Enum.Font.GothamBold; wi.TextColor3=rgb(244,182,44); wi.ZIndex=4; wi.Parent=warn
+    local wl=Instance.new("TextLabel"); wl.Size=UDim2.new(1,-50,1,0); wl.Position=UDim2.new(0,38,0,0); wl.BackgroundTransparency=1; wl.Text="Aimbot + ESP integrated. See Aim & ESP tabs."; wl.TextWrapped=true; wl.Font=Enum.Font.GothamMedium; wl.TextSize=11; wl.TextColor3=rgb(210,190,126); wl.ZIndex=4; wl.Parent=warn
 end
 
 -- ═══════════════════════════════════
--- MAIN PAGE
+-- AIM PAGE
 -- ═══════════════════════════════════
 do
-    local page=sections.Main.page; local sc=sections.Main.scroll
-    sc.Size=UDim2.new(1,0,1,-46)
-    makeHead(sc,"Main",1); makeSep(sc,2)
-    local visState={visual=false}
-    makeToggle(sc,"Visual Mode","visual",visState,3,function(v) notify("Visual Mode",v and "Enabled" or "Disabled",2) end)
-    makeSep(sc,4)
-    local infoCard=makeCard(sc,5,52)
-    infoCard.BackgroundColor3=rgb(12,12,22); infoCard.BackgroundTransparency=0.08
-    local infoIcon=Instance.new("TextLabel"); infoIcon.Position=UDim2.new(0,10,0,0); infoIcon.Size=UDim2.new(0,26,1,0)
-    infoIcon.BackgroundTransparency=1; infoIcon.Text="✦"; infoIcon.Font=Enum.Font.GothamBold; infoIcon.TextSize=16; infoIcon.ZIndex=4; infoIcon.Parent=infoCard
-    onTheme(function(p) infoIcon.TextColor3=p end)
-    local infoLbl=Instance.new("TextLabel"); infoLbl.Size=UDim2.new(1,-50,1,0); infoLbl.Position=UDim2.new(0,38,0,0)
-    infoLbl.BackgroundTransparency=1; infoLbl.Text="More features coming in the next update."
-    infoLbl.TextWrapped=true; infoLbl.Font=Enum.Font.GothamMedium; infoLbl.TextSize=11; infoLbl.TextColor3=theme.sub; infoLbl.ZIndex=4; infoLbl.Parent=infoCard
-    local savedWrap=Instance.new("Frame"); savedWrap.AnchorPoint=Vector2.new(0.5,1); savedWrap.Position=UDim2.new(0.5,0,1,0)
-    savedWrap.Size=UDim2.new(1,0,0,40); savedWrap.BackgroundTransparency=1; savedWrap.ZIndex=4; savedWrap.Parent=page
+    local sc=sections.Aim.scroll
+    makeHead(sc,"Aimbot",1); makeSep(sc,2)
+
+    makeToggle(sc,"Aimbot Enabled","Enabled",AimbotCfg,3,function(v)
+        notify("Aimbot",v and "Enabled" or "Disabled",2,true)
+    end)
+
+    -- Target selector
+    makeSelector(sc,"Target Part","TargetPart",AimbotCfg,{"Head","Torso"},4,function(v)
+        TargetBtn.Text = "Target: " .. v
+        notify("Target",v,2,true)
+    end)
+    -- Globally store TargetBtn for cycleTarget
+    TargetBtn = makeBtn(sc,"Target: Head",rgb(50,110,200),5,function() cycleTarget() end)
+    TargetBtn.Text = "Target: " .. AimbotCfg.TargetPart
+
+    -- Visibility Check
+    makeToggle(sc,"Visibility Check","VisibleCheck",AimbotCfg,6,function(v)
+        notify("Visibility Check",v and "On" or "Off",2,true)
+    end)
+
+    makeSep(sc,8)
+    makeHead(sc,"FOV",9); makeSep(sc,10)
+    makeSlider(sc,"FOV Size","FOV",AimbotCfg,20,400,11," px",function(v)
+        FOVFrame.Size = UDim2.new(0, v*2, 0, v*2)
+    end)
+
+    makeToggle(sc,"Show FOV Circle","ShowFOV",AimbotCfg,12,function(v)
+        FOVFrame.Visible = v
+        if FOVBtn then
+            FOVBtn.Text = "Show FOV: " .. (v and "ON" or "OFF")
+            FOVBtn.BackgroundColor3 = v and rgb(50,150,50) or rgb(150,50,50)
+        end
+        notify("FOV Circle",v and "Visible" or "Hidden",2,true)
+    end)
+
+    makeSep(sc,14)
+    makeHead(sc,"Smoothing",15); makeSep(sc,16)
+    makeSlider(sc,"Smoothness (0-1)","Smoothness",AimbotCfg,0,1,17,"",function(v)
+        AimbotCfg.Smoothness = math.clamp(v,0,1)
+    end)
+
+    makeSep(sc,19)
+    makeHead(sc,"Hotkeys",20); makeSep(sc,21)
+
+    local hotkeyCard=makeCard(sc,22,0)
+    hotkeyCard.AutomaticSize=Enum.AutomaticSize.Y
+    hotkeyCard.BackgroundColor3=rgb(10,10,18); hotkeyCard.BackgroundTransparency=0.08
+    local hotkeyText=Instance.new("TextLabel")
+    hotkeyText.Size=UDim2.new(1,-20,0,0); hotkeyText.Position=UDim2.new(0,10,0,10)
+    hotkeyText.BackgroundTransparency=1; hotkeyText.AutomaticSize=Enum.AutomaticSize.Y
+    hotkeyText.Text=[[
+    T  —  Switch Target (Head ↔ Torso)
+    F  —  Toggle FOV Circle
+    ]]
+    hotkeyText.Font=Enum.Font.Gotham; hotkeyText.TextSize=11; hotkeyText.TextColor3=rgb(190,192,210)
+    hotkeyText.TextXAlignment=Enum.TextXAlignment.Left; hotkeyText.TextYAlignment=Enum.TextYAlignment.Top
+    hotkeyText.TextWrapped=true; hotkeyText.ZIndex=4; hotkeyText.Parent=hotkeyCard
+    local hotkeyBot=Instance.new("Frame"); hotkeyBot.Size=UDim2.new(1,0,0,10); hotkeyBot.BackgroundTransparency=1; hotkeyBot.ZIndex=3; hotkeyBot.Parent=hotkeyCard
+
+    local savedWrap=Instance.new("Frame"); savedWrap.AnchorPoint=Vector2.new(0.5,1)
+    savedWrap.Position=UDim2.new(0.5,0,1,0); savedWrap.Size=UDim2.new(1,0,0,40)
+    savedWrap.BackgroundTransparency=1; savedWrap.ZIndex=4; savedWrap.Parent=sections.Aim.page
     makeBtn(savedWrap,"Save Settings",rgb(36,164,72),0,function() saveConfig(); notify("Saved","Settings stored.",3) end)
 end
 
 -- ═══════════════════════════════════
--- MINIMAP
+-- ESP PAGE
 -- ═══════════════════════════════════
+do
+    local sc=sections.ESP.scroll
+    makeHead(sc,"Wallhack (ESP)",1); makeSep(sc,2)
+
+    makeToggle(sc,"Wallhack Enabled","WallhackEnabled",AimbotCfg,3,function(v)
+        updateAllWH()
+        notify("Wallhack",v and "Enabled" or "Disabled",2,true)
+    end)
+
+    makeSep(sc,5)
+    makeHead(sc,"Friend List",6); makeSep(sc,7)
+
+    -- Add friend row
+    local friendRow=makeCard(sc,8,42)
+    local friendLabel=Instance.new("TextLabel")
+    friendLabel.Size=UDim2.new(0,50,1,0); friendLabel.Position=UDim2.new(0,14,0,0)
+    friendLabel.BackgroundTransparency=1; friendLabel.Text="Name:"
+    friendLabel.Font=Enum.Font.GothamMedium; friendLabel.TextSize=12; friendLabel.TextColor3=theme.text
+    friendLabel.TextXAlignment=Enum.TextXAlignment.Left; friendLabel.ZIndex=4; friendLabel.Parent=friendRow
+
+    local friendInput=Instance.new("TextBox")
+    friendInput.Position=UDim2.new(0,66,0.5,-13); friendInput.Size=UDim2.new(0,120,0,26)
+    friendInput.BackgroundColor3=rgb(16,16,26); friendInput.TextColor3=W3
+    friendInput.PlaceholderText="Player name"
+    friendInput.PlaceholderColor3=theme.sub; friendInput.Text=""
+    friendInput.Font=Enum.Font.Gotham; friendInput.TextSize=11; friendInput.ZIndex=5; friendInput.Parent=friendRow
+    corner(friendInput,7); stroke(friendInput,W3,1,0.90); uipad(friendInput,6,0,0,0)
+
+    local addFriendBtn=makeBtn(friendRow,"Add",rgb(50,168,74),0,function()
+        local name=friendInput.Text:gsub("^%s*(.-)%s*$","%1")
+        if name=="" then notify("Friend","Enter a name!",2,true); return end
+        local pl=Players:FindFirstChild(name)
+        if not pl then notify("Friend","Player not found!",2,true); return end
+        for _,v in ipairs(FriendList) do if v==name then return end end
+        table.insert(FriendList, name)
+        friendInput.Text=""
+        updateFriendDisplay()
+        if pl then updatePlayerHighlight(pl) end
+        notify("Friend","Added: "..name,2,true)
+    end)
+
+    local removeFriendBtn=makeBtn(friendRow,"Remove",rgb(180,44,50),0,function()
+        local name=friendInput.Text:gsub("^%s*(.-)%s*$","%1")
+        if name=="" then notify("Friend","Enter a name!",2,true); return end
+        for i,v in ipairs(FriendList) do if v==name then table.remove(FriendList,i); friendInput.Text=""; updateFriendDisplay(); local pl=Players:FindFirstChild(name); if pl then updatePlayerHighlight(pl) end; notify("Friend","Removed: "..name,2,true); return end end
+        notify("Friend","Not in list!",2,true)
+    end)
+
+    makeSep(sc,10)
+    makeHead(sc,"Friend List",11); makeSep(sc,12)
+
+    local friendDisplay=Instance.new("ScrollingFrame")
+    friendDisplay.Size=UDim2.new(1,0,0,120); friendDisplay.BackgroundColor3=rgb(10,10,18)
+    friendDisplay.BackgroundTransparency=0.08; friendDisplay.BorderSizePixel=0
+    friendDisplay.CanvasSize=UDim2.new(0,0,0,0); friendDisplay.ScrollBarThickness=3
+    friendDisplay.LayoutOrder=13; friendDisplay.ZIndex=3; friendDisplay.Parent=sc
+    local friendDisplayLayout=Instance.new("UIListLayout"); friendDisplayLayout.Padding=UDim.new(0,2); friendDisplayLayout.SortOrder=Enum.SortOrder.LayoutOrder; friendDisplayLayout.Parent=friendDisplay
+    friendDisplay:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        friendDisplay.CanvasSize=UDim2.new(0,0,0,friendDisplayLayout.AbsoluteContentSize.Y+10)
+    end)
+
+    local emptyLabel=Instance.new("TextLabel"); emptyLabel.Size=UDim2.new(1,0,1,0); emptyLabel.BackgroundTransparency=1; emptyLabel.Text="No friends added."; emptyLabel.TextColor3=theme.sub; emptyLabel.Font=Enum.Font.Gotham; emptyLabel.TextSize=12; emptyLabel.ZIndex=4; emptyLabel.Parent=friendDisplay
+
+    local function updateFriendDisplay()
+        for _,ch in ipairs(friendDisplay:GetChildren()) do if ch~=emptyLabel then ch:Destroy() end end
+        if #FriendList==0 then emptyLabel.Visible=true; friendDisplay.CanvasSize=UDim2.new(0,0,0,0); return end
+        emptyLabel.Visible=false
+        local y=0
+        for _,name in ipairs(FriendList) do
+            local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,0,0,24); lbl.Position=UDim2.new(0,0,0,y)
+            lbl.BackgroundTransparency=1; lbl.Text="• "..name; lbl.TextColor3=theme.text; lbl.TextXAlignment=Enum.TextXAlignment.Left
+            lbl.Font=Enum.Font.Gotham; lbl.TextSize=12; lbl.ZIndex=4; lbl.Parent=friendDisplay
+            y=y+24
+        end
+        friendDisplay.CanvasSize=UDim2.new(0,0,0,y+4)
+    end
+    updateFriendDisplay()
+
+    makeSep(sc,14)
+    local savedWrap=Instance.new("Frame"); savedWrap.AnchorPoint=Vector2.new(0.5,1)
+    savedWrap.Position=UDim2.new(0.5,0,1,0); savedWrap.Size=UDim2.new(1,0,0,40)
+    savedWrap.BackgroundTransparency=1; savedWrap.ZIndex=4; savedWrap.Parent=sections.ESP.page
+    makeBtn(savedWrap,"Save Settings",rgb(36,164,72),0,function() saveConfig(); notify("Saved","Settings stored.",3) end)
+end
+
+-- ═══════════════════════════════════
+-- ESP / AIM CORE FUNCTIONS
+-- ═══════════════════════════════════
+
+-- ── UPDATE PLAYER HIGHLIGHT ──────────────────────────────
+local function updatePlayerHighlight(player)
+    if player==LP then return end
+    local char=player.Character
+    if not char then return end
+    if char:FindFirstChild("DeltaWH") then char.DeltaWH:Destroy() end
+    if not AimbotCfg.WallhackEnabled then return end
+    local isFr=isFriend(player)
+    local hl=Instance.new("Highlight"); hl.Name="DeltaWH"
+    if isFr then
+        hl.FillColor=rgb(0,255,0); hl.OutlineColor=rgb(20,20,20); hl.FillTransparency=0.3; hl.OutlineTransparency=0
+    else
+        hl.FillColor=rgb(255,0,0); hl.OutlineColor=W3; hl.FillTransparency=0.5; hl.OutlineTransparency=0
+    end
+    hl.Adornee=char; hl.Parent=char
+end
+
+local function applyHighlight(player)
+    if player==LP then return end
+    local function setup(char) if char then char:WaitForChild("HumanoidRootPart",5); char:WaitForChild("Humanoid",5); updatePlayerHighlight(player) end end
+    if player.Character then setup(player.Character) end
+    player.CharacterAdded:Connect(setup)
+end
+
+for _,p in pairs(Players:GetPlayers()) do applyHighlight(p) end
+Players.PlayerAdded:Connect(applyHighlight)
+
+local function updateAllWH()
+    for _,p in pairs(Players:GetPlayers()) do if p~=LP and p.Character then updatePlayerHighlight(p) end end
+end
+
+-- ── FOV CIRCLE UI ──────────────────────────────────────────
+local FOVFrame=Instance.new("Frame",SG)
+FOVFrame.AnchorPoint=Vector2.new(0.5,0.5)
+FOVFrame.Position=UDim2.new(0.5,0,0.5,0)
+FOVFrame.Size=UDim2.new(0,AimbotCfg.FOV*2,0,AimbotCfg.FOV*2)
+FOVFrame.BackgroundTransparency=1
+FOVFrame.Visible=AimbotCfg.ShowFOV
+FOVFrame.ZIndex=25
+local fovCorner=Instance.new("UICorner",FOVFrame); fovCorner.CornerRadius=UDim.new(1,0)
+local fovStroke=Instance.new("UIStroke",FOVFrame); fovStroke.Color=rgb(255,0,0); fovStroke.Thickness=1.5; fovStroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
+
+-- ── HOTKEYS ────────────────────────────────────────────────
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode==Enum.KeyCode.T then cycleTarget() end
+    if input.KeyCode==Enum.KeyCode.F then
+        AimbotCfg.ShowFOV=not AimbotCfg.ShowFOV
+        FOVFrame.Visible=AimbotCfg.ShowFOV
+        notify("FOV Circle",AimbotCfg.ShowFOV and "Visible" or "Hidden",2,true)
+    end
+end)
+
+-- ── MAIN LOOP ──────────────────────────────────────────────
+RunService.RenderStepped:Connect(function()
+    if AimbotCfg.Enabled then
+        local target=getClosestPlayer()
+        if target and target.Character then
+            local part=target.Character:FindFirstChild(AimbotCfg.TargetPart)
+            if not part then part=target.Character:FindFirstChild("HumanoidRootPart") end
+            if part then
+                local targetCF=CFrame.new(Camera.CFrame.Position, part.Position)
+                Camera.CFrame=Camera.CFrame:Lerp(targetCF, 1-AimbotCfg.Smoothness)
+            end
+        end
+    end
+end)
+
+-- ══ MINIMAP ══════════════════════════════════════════════
 local mapFrame=nil; local mapLocalDot=nil; local mapDots={}
 
 local function buildMinimap()
@@ -1051,22 +1084,15 @@ local function buildMinimap()
     end
     local nlbl=Instance.new("TextLabel"); nlbl.Size=UDim2.new(1,0,0,14); nlbl.Position=UDim2.new(0,0,0,3)
     nlbl.BackgroundTransparency=1; nlbl.Text="N"; nlbl.Font=Enum.Font.GothamBold; nlbl.TextSize=9; nlbl.TextColor3=rgb(155,155,195); nlbl.ZIndex=47; nlbl.Parent=mapFrame
-
-    -- Local player dot: simple circle
     mapLocalDot=Instance.new("Frame"); mapLocalDot.AnchorPoint=Vector2.new(0.5,0.5)
     mapLocalDot.Position=UDim2.new(0.5,0,0.5,0); mapLocalDot.Size=UDim2.new(0,10,0,10)
     mapLocalDot.BackgroundColor3=rgb(60,140,255); mapLocalDot.BorderSizePixel=0; mapLocalDot.ZIndex=48; mapLocalDot.Parent=mapFrame
     corner(mapLocalDot,5); onTheme(function(p) mapLocalDot.BackgroundColor3=p end)
-
-    -- Pulse ring
     local pulse=Instance.new("Frame"); pulse.AnchorPoint=Vector2.new(0.5,0.5); pulse.Position=UDim2.new(0.5,0,0.5,0)
     pulse.Size=UDim2.new(0,14,0,14); pulse.BackgroundTransparency=1; pulse.BorderSizePixel=0; pulse.ZIndex=47; pulse.Parent=mapFrame; corner(pulse,7)
     local ps=Instance.new("UIStroke"); ps.Thickness=1.4; ps.Transparency=0.55; ps.Parent=pulse; onTheme(function(p) ps.Color=p end)
     task.spawn(function()
-        while mapFrame and mapFrame.Parent do
-            tw(pulse,0.90,{Size=UDim2.new(0,22,0,22)}); tw(ps,0.90,{Transparency=0.92})
-            task.wait(0.90); pulse.Size=UDim2.new(0,14,0,14); ps.Transparency=0.55; task.wait(0.26)
-        end
+        while mapFrame and mapFrame.Parent do tw(pulse,0.90,{Size=UDim2.new(0,22,0,22)}); tw(ps,0.90,{Transparency=0.92}); task.wait(0.90); pulse.Size=UDim2.new(0,14,0,14); ps.Transparency=0.55; task.wait(0.26) end
     end)
 end
 
@@ -1075,12 +1101,9 @@ local function getOrCreateDot(player)
     if not mapFrame then return nil end
     local isFr=false; for _,fn in pairs(FriendList) do if fn==player.Name then isFr=true; break end end
     local dot=Instance.new("Frame"); dot.AnchorPoint=Vector2.new(0.5,0.5); dot.Size=UDim2.new(0,7,0,7)
-    dot.BackgroundColor3=isFr and rgb(60,220,110) or rgb(228,50,60)
-    dot.BorderSizePixel=0; dot.ZIndex=46; dot.Parent=mapFrame; corner(dot,4)
-    local ndot=Instance.new("Frame"); ndot.AnchorPoint=Vector2.new(0.5,1); ndot.Position=UDim2.new(0.5,0,0,-2)
-    ndot.Size=UDim2.new(0,58,0,10); ndot.BackgroundTransparency=1; ndot.ZIndex=47; ndot.Parent=dot
-    local nlbl=Instance.new("TextLabel"); nlbl.Size=UDim2.new(1,0,1,0); nlbl.BackgroundTransparency=1
-    nlbl.Text=player.Name; nlbl.Font=Enum.Font.GothamBold; nlbl.TextSize=7; nlbl.TextColor3=W3; nlbl.TextStrokeTransparency=0.30; nlbl.ZIndex=47; nlbl.Parent=ndot
+    dot.BackgroundColor3=isFr and rgb(60,220,110) or rgb(228,50,60); dot.BorderSizePixel=0; dot.ZIndex=46; dot.Parent=mapFrame; corner(dot,4)
+    local ndot=Instance.new("Frame"); ndot.AnchorPoint=Vector2.new(0.5,1); ndot.Position=UDim2.new(0.5,0,0,-2); ndot.Size=UDim2.new(0,58,0,10); ndot.BackgroundTransparency=1; ndot.ZIndex=47; ndot.Parent=dot
+    local nlbl=Instance.new("TextLabel"); nlbl.Size=UDim2.new(1,0,1,0); nlbl.BackgroundTransparency=1; nlbl.Text=player.Name; nlbl.Font=Enum.Font.GothamBold; nlbl.TextSize=7; nlbl.TextColor3=W3; nlbl.TextStrokeTransparency=0.30; nlbl.ZIndex=47; nlbl.Parent=ndot
     mapDots[player]=dot; return dot
 end
 
@@ -1101,8 +1124,7 @@ local function updateMinimap()
                 local dot=getOrCreateDot(pl)
                 if dot then
                     local isFr=false; for _,fn in pairs(FriendList) do if fn==pl.Name then isFr=true; break end end
-                    dot.BackgroundColor3=isFr and rgb(60,220,110) or rgb(228,50,60)
-                    dot.Position=UDim2.new(0.5+rx,0,0.5+ry,0); seen[pl]=true
+                    dot.BackgroundColor3=isFr and rgb(60,220,110) or rgb(228,50,60); dot.Position=UDim2.new(0.5+rx,0,0.5+ry,0); seen[pl]=true
                 end
             end
         end
@@ -1111,26 +1133,16 @@ local function updateMinimap()
 end
 conn(RunService.RenderStepped:Connect(function() if MapSettings.Enabled then updateMinimap() end end))
 
--- Map move overlay
-local mapMoveOv=Instance.new("Frame"); mapMoveOv.Size=UDim2.new(1,0,1,0); mapMoveOv.BackgroundColor3=BK
-mapMoveOv.BackgroundTransparency=0.50; mapMoveOv.Visible=false; mapMoveOv.ZIndex=80; mapMoveOv.Parent=SG
-local mmLbl=Instance.new("TextLabel"); mmLbl.AnchorPoint=Vector2.new(0.5,0.4); mmLbl.Position=UDim2.new(0.5,0,0.4,0)
-mmLbl.Size=UDim2.new(0.82,0,0,54); mmLbl.BackgroundTransparency=1; mmLbl.Text="Move the 2D Map wherever you want..."
-mmLbl.Font=Enum.Font.GothamBlack; mmLbl.TextSize=22; mmLbl.TextColor3=W3; mmLbl.TextWrapped=true; mmLbl.ZIndex=81; mmLbl.Parent=mapMoveOv
+local mapMoveOv=Instance.new("Frame"); mapMoveOv.Size=UDim2.new(1,0,1,0); mapMoveOv.BackgroundColor3=BK; mapMoveOv.BackgroundTransparency=0.50; mapMoveOv.Visible=false; mapMoveOv.ZIndex=80; mapMoveOv.Parent=SG
+local mmLbl=Instance.new("TextLabel"); mmLbl.AnchorPoint=Vector2.new(0.5,0.4); mmLbl.Position=UDim2.new(0.5,0,0.4,0); mmLbl.Size=UDim2.new(0.82,0,0,54); mmLbl.BackgroundTransparency=1; mmLbl.Text="Move the 2D Map wherever you want..."; mmLbl.Font=Enum.Font.GothamBlack; mmLbl.TextSize=22; mmLbl.TextColor3=W3; mmLbl.TextWrapped=true; mmLbl.ZIndex=81; mmLbl.Parent=mapMoveOv
 local mmG=Instance.new("UIGradient"); mmG.Parent=mmLbl
 onTheme(function(p) mmG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p),ColorSequenceKeypoint.new(0.5,W3),ColorSequenceKeypoint.new(1,p)}) end)
-local mmActs=Instance.new("Frame"); mmActs.AnchorPoint=Vector2.new(0.5,0); mmActs.Position=UDim2.new(0.5,0,0.56,0)
-mmActs.Size=UDim2.new(0,218,0,44); mmActs.BackgroundTransparency=1; mmActs.ZIndex=81; mmActs.Parent=mapMoveOv
-local mmal=Instance.new("UIListLayout"); mmal.FillDirection=Enum.FillDirection.Horizontal; mmal.Padding=UDim.new(0,14)
-mmal.HorizontalAlignment=Enum.HorizontalAlignment.Center; mmal.VerticalAlignment=Enum.VerticalAlignment.Center; mmal.Parent=mmActs
+local mmActs=Instance.new("Frame"); mmActs.AnchorPoint=Vector2.new(0.5,0); mmActs.Position=UDim2.new(0.5,0,0.56,0); mmActs.Size=UDim2.new(0,218,0,44); mmActs.BackgroundTransparency=1; mmActs.ZIndex=81; mmActs.Parent=mapMoveOv
+local mmal=Instance.new("UIListLayout"); mmal.FillDirection=Enum.FillDirection.Horizontal; mmal.Padding=UDim.new(0,14); mmal.HorizontalAlignment=Enum.HorizontalAlignment.Center; mmal.VerticalAlignment=Enum.VerticalAlignment.Center; mmal.Parent=mmActs
 local function mkMapBtn(txt,col)
-    local b=Instance.new("TextButton"); b.Size=UDim2.new(0,100,0,40); b.BackgroundColor3=col; b.Text=txt
-    b.Font=Enum.Font.GothamBold; b.TextSize=14; b.TextColor3=W3; b.AutoButtonColor=false; b.ZIndex=82; b.Parent=mmActs; corner(b,12); stroke(b,W3,1,0.84)
-    b.MouseEnter:Connect(function() tw(b,0.12,{BackgroundColor3=col:Lerp(W3,0.16),Size=UDim2.new(0,104,0,42)}) end)
-    b.MouseLeave:Connect(function() tw(b,0.16,{BackgroundColor3=col,Size=UDim2.new(0,100,0,40)}) end)
-    b.MouseButton1Down:Connect(function() tw(b,0.07,{BackgroundColor3=col:Lerp(BK,0.16)},Enum.EasingStyle.Quad) end)
-    b.MouseButton1Up:Connect(function() tw(b,0.13,{BackgroundColor3=col}) end)
-    return b
+    local b=Instance.new("TextButton"); b.Size=UDim2.new(0,100,0,40); b.BackgroundColor3=col; b.Text=txt; b.Font=Enum.Font.GothamBold; b.TextSize=14; b.TextColor3=W3; b.AutoButtonColor=false; b.ZIndex=82; b.Parent=mmActs; corner(b,12); stroke(b,W3,1,0.84)
+    b.MouseEnter:Connect(function() tw(b,0.12,{BackgroundColor3=col:Lerp(W3,0.16),Size=UDim2.new(0,104,0,42)}) end); b.MouseLeave:Connect(function() tw(b,0.16,{BackgroundColor3=col,Size=UDim2.new(0,100,0,40)}) end)
+    b.MouseButton1Down:Connect(function() tw(b,0.07,{BackgroundColor3=col:Lerp(BK,0.16)},Enum.EasingStyle.Quad) end); b.MouseButton1Up:Connect(function() tw(b,0.13,{BackgroundColor3=col}) end); return b
 end
 local mmSave=mkMapBtn("Save",rgb(40,168,74)); local mmClose=mkMapBtn("Close",rgb(180,44,50))
 local mapDragAct,mapDragSMX,mapDragSMY,mapDragSOX,mapDragSOY=false,0,0,0,0
@@ -1163,189 +1175,84 @@ end
 mmSave.MouseButton1Click:Connect(function() exitMapMove(true); notify("Map saved","Position stored.",3) end)
 mmClose.MouseButton1Click:Connect(function() exitMapMove(false) end)
 
--- ═══════════════════════════════════
--- SETTINGS PAGE
--- ═══════════════════════════════════
+-- ══ SETTINGS PAGE ════════════════════════════════════════
 local frozen=false
 local function showLoading()
-    local ov=Instance.new("Frame"); ov.Size=UDim2.new(1,0,1,0); ov.BackgroundColor3=rgb(7,7,13)
-    ov.BackgroundTransparency=0.18; ov.ZIndex=30; ov.Parent=win; corner(ov,16)
-    local ring=Instance.new("Frame"); ring.AnchorPoint=Vector2.new(0.5,0.5); ring.Position=UDim2.new(0.5,0,0.42,0)
-    ring.Size=UDim2.new(0,50,0,50); ring.BackgroundTransparency=1; ring.ZIndex=31; ring.Parent=ov; corner(ring,25)
-    local rs=stroke(ring,W3,3,0); local rg=Instance.new("UIGradient")
-    rg.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(0.55,1),NumberSequenceKeypoint.new(1,1)}); rg.Parent=rs
-    onTheme(function(p) rs.Color=p end)
-    local lbl=Instance.new("TextLabel"); lbl.AnchorPoint=Vector2.new(0.5,0); lbl.Position=UDim2.new(0.5,0,0.64,0)
-    lbl.Size=UDim2.new(1,0,0,22); lbl.BackgroundTransparency=1; lbl.Text="Applying..."
-    lbl.Font=Enum.Font.GothamBold; lbl.TextSize=13; lbl.TextColor3=W3; lbl.ZIndex=31; lbl.Parent=ov
-    local run=true
-    task.spawn(function() local d=0; while run do d=d%3+1; lbl.Text="Applying"..string.rep(".",d); task.wait(0.34) end end)
+    local ov=Instance.new("Frame"); ov.Size=UDim2.new(1,0,1,0); ov.BackgroundColor3=rgb(7,7,13); ov.BackgroundTransparency=0.18; ov.ZIndex=30; ov.Parent=win; corner(ov,16)
+    local ring=Instance.new("Frame"); ring.AnchorPoint=Vector2.new(0.5,0.5); ring.Position=UDim2.new(0.5,0,0.42,0); ring.Size=UDim2.new(0,50,0,50); ring.BackgroundTransparency=1; ring.ZIndex=31; ring.Parent=ov; corner(ring,25)
+    local rs=stroke(ring,W3,3,0); local rg=Instance.new("UIGradient"); rg.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(0.55,1),NumberSequenceKeypoint.new(1,1)}); rg.Parent=rs; onTheme(function(p) rs.Color=p end)
+    local lbl=Instance.new("TextLabel"); lbl.AnchorPoint=Vector2.new(0.5,0); lbl.Position=UDim2.new(0.5,0,0.64,0); lbl.Size=UDim2.new(1,0,0,22); lbl.BackgroundTransparency=1; lbl.Text="Applying..."; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=13; lbl.TextColor3=W3; lbl.ZIndex=31; lbl.Parent=ov
+    local run=true; task.spawn(function() local d=0; while run do d=d%3+1; lbl.Text="Applying"..string.rep(".",d); task.wait(0.34) end end)
     local sp; sp=RunService.RenderStepped:Connect(function() if ov.Parent then rg.Rotation=(rg.Rotation+8)%360 else sp:Disconnect() end end)
-    return function()
-        run=false; if sp then sp:Disconnect() end
-        tw(ov,0.26,{BackgroundTransparency=1}); task.delay(0.28,function() if ov then ov:Destroy() end end)
-    end
+    return function() run=false; if sp then sp:Disconnect() end; tw(ov,0.26,{BackgroundTransparency=1}); task.delay(0.28,function() if ov then ov:Destroy() end end) end
 end
 
 local function changeColor(key)
     if frozen then return end; frozen=true
     local nc=PMAP[key].c; local snap=win:GetDescendants(); local cl=showLoading()
     tw(win,0.36,{BackgroundTransparency=0.32})
-    for _,d in ipairs(snap) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.36,{TextTransparency=0.55}) end) end
-    end
+    for _,d in ipairs(snap) do if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.36,{TextTransparency=0.55}) end) end end
     task.wait(0.36); local start=theme.primary; local t0=os.clock()
-    while os.clock()-t0<1.7 do
-        local a=math.sin(((os.clock()-t0)/1.7)*(math.pi/2)); theme.primary=start:Lerp(nc,a); applyTheme(); RunService.RenderStepped:Wait()
-    end
+    while os.clock()-t0<1.7 do local a=math.sin(((os.clock()-t0)/1.7)*(math.pi/2)); theme.primary=start:Lerp(nc,a); applyTheme(); RunService.RenderStepped:Wait() end
     theme.primary=nc; theme.key=key; applyTheme()
     tw(win,0.36,{BackgroundTransparency=0})
-    for _,d in ipairs(snap) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.36,{TextTransparency=0}) end) end
-    end
+    for _,d in ipairs(snap) do if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.36,{TextTransparency=0}) end) end end
     task.wait(0.36); cl(); frozen=false; saveConfig(); notify("Theme applied","Color: "..PMAP[key].name,4,true)
 end
 
 do
     local sc=sections.Settings.scroll
     makeHead(sc,"Settings",1); makeSep(sc,2)
-
-    -- Color picker header
+    local pickerOpen2=false
     local chRow=makeCard(sc,3,44)
-    local chIcon=Instance.new("TextLabel"); chIcon.Position=UDim2.new(0,12,0,0); chIcon.Size=UDim2.new(0,22,1,0)
-    chIcon.BackgroundTransparency=1; chIcon.Text="●"; chIcon.Font=Enum.Font.GothamBold; chIcon.TextSize=14; chIcon.ZIndex=4; chIcon.Parent=chRow
-    onTheme(function(p) chIcon.TextColor3=p end)
-    local chLabel=Instance.new("TextLabel"); chLabel.Position=UDim2.new(0,36,0,0); chLabel.Size=UDim2.new(1,-90,1,0)
-    chLabel.BackgroundTransparency=1; chLabel.Text="Accent Color"; chLabel.Font=Enum.Font.GothamBold; chLabel.TextSize=13
-    chLabel.TextColor3=theme.text; chLabel.TextXAlignment=Enum.TextXAlignment.Left; chLabel.ZIndex=4; chLabel.Parent=chRow
-    local chPreview=Instance.new("Frame"); chPreview.AnchorPoint=Vector2.new(1,0.5); chPreview.Position=UDim2.new(1,-38,0.5,0)
-    chPreview.Size=UDim2.new(0,14,0,14); chPreview.BackgroundColor3=theme.primary; chPreview.BorderSizePixel=0; chPreview.ZIndex=4; chPreview.Parent=chRow; corner(chPreview,7)
-    onTheme(function(p) chPreview.BackgroundColor3=p end)
-    local chArrow=Instance.new("TextLabel"); chArrow.AnchorPoint=Vector2.new(1,0.5); chArrow.Position=UDim2.new(1,-14,0.5,0)
-    chArrow.Size=UDim2.new(0,18,0,18); chArrow.BackgroundTransparency=1; chArrow.Text="›"
-    chArrow.Font=Enum.Font.GothamBold; chArrow.TextSize=16; chArrow.TextColor3=theme.sub; chArrow.Rotation=90; chArrow.ZIndex=4; chArrow.Parent=chRow
+    local chIcon=Instance.new("TextLabel"); chIcon.Position=UDim2.new(0,12,0,0); chIcon.Size=UDim2.new(0,22,1,0); chIcon.BackgroundTransparency=1; chIcon.Text="●"; chIcon.Font=Enum.Font.GothamBold; chIcon.TextSize=14; chIcon.ZIndex=4; chIcon.Parent=chRow; onTheme(function(p) chIcon.TextColor3=p end)
+    local chLabel=Instance.new("TextLabel"); chLabel.Position=UDim2.new(0,36,0,0); chLabel.Size=UDim2.new(1,-90,1,0); chLabel.BackgroundTransparency=1; chLabel.Text="Accent Color"; chLabel.Font=Enum.Font.GothamBold; chLabel.TextSize=13; chLabel.TextColor3=theme.text; chLabel.TextXAlignment=Enum.TextXAlignment.Left; chLabel.ZIndex=4; chLabel.Parent=chRow
+    local chPreview=Instance.new("Frame"); chPreview.AnchorPoint=Vector2.new(1,0.5); chPreview.Position=UDim2.new(1,-38,0.5,0); chPreview.Size=UDim2.new(0,14,0,14); chPreview.BackgroundColor3=theme.primary; chPreview.BorderSizePixel=0; chPreview.ZIndex=4; chPreview.Parent=chRow; corner(chPreview,7); onTheme(function(p) chPreview.BackgroundColor3=p end)
+    local chArrow=Instance.new("TextLabel"); chArrow.AnchorPoint=Vector2.new(1,0.5); chArrow.Position=UDim2.new(1,-14,0.5,0); chArrow.Size=UDim2.new(0,18,0,18); chArrow.BackgroundTransparency=1; chArrow.Text="›"; chArrow.Font=Enum.Font.GothamBold; chArrow.TextSize=16; chArrow.TextColor3=theme.sub; chArrow.Rotation=90; chArrow.ZIndex=4; chArrow.Parent=chRow
     local chBtn=Instance.new("TextButton"); chBtn.Size=UDim2.new(1,0,1,0); chBtn.BackgroundTransparency=1; chBtn.Text=""; chBtn.ZIndex=5; chBtn.Parent=chRow
-    chBtn.MouseEnter:Connect(function() tw(chRow,0.13,{BackgroundTransparency=0.08}) end)
-    chBtn.MouseLeave:Connect(function() tw(chRow,0.18,{BackgroundTransparency=0.28}) end)
-
-    -- Picker panel (collapsible)
-    local pickerFrame=Instance.new("Frame"); pickerFrame.Size=UDim2.new(1,0,0,0)
-    pickerFrame.BackgroundColor3=rgb(12,12,19); pickerFrame.BackgroundTransparency=0.05
-    pickerFrame.BorderSizePixel=0; pickerFrame.ClipsDescendants=true; pickerFrame.LayoutOrder=4; pickerFrame.ZIndex=3; pickerFrame.Parent=sc
-    corner(pickerFrame,11); stroke(pickerFrame,W3,1,0.92)
-
-    -- Color circles grid
-    local colorGrid=Instance.new("Frame"); colorGrid.Size=UDim2.new(1,-20,0,0)
-    colorGrid.Position=UDim2.new(0,10,0,10); colorGrid.BackgroundTransparency=1; colorGrid.ZIndex=4; colorGrid.Parent=pickerFrame
-    local gridL=Instance.new("UIGridLayout"); gridL.CellSize=UDim2.new(0,28,0,28); gridL.CellPadding=UDim2.new(0,8,0,8)
-    gridL.HorizontalAlignment=Enum.HorizontalAlignment.Left; gridL.VerticalAlignment=Enum.VerticalAlignment.Top; gridL.Parent=colorGrid
-
-    local COLS=8
-    local ROWS=math.ceil(#PRESETS/COLS)
-    local GRID_H=ROWS*36+18
-    colorGrid.Size=UDim2.new(1,-20,0,GRID_H)
-
+    chBtn.MouseEnter:Connect(function() tw(chRow,0.13,{BackgroundTransparency=0.08}) end); chBtn.MouseLeave:Connect(function() tw(chRow,0.18,{BackgroundTransparency=0.28}) end)
+    local pickerFrame=Instance.new("Frame"); pickerFrame.Size=UDim2.new(1,0,0,0); pickerFrame.BackgroundColor3=rgb(12,12,19); pickerFrame.BackgroundTransparency=0.05; pickerFrame.BorderSizePixel=0; pickerFrame.ClipsDescendants=true; pickerFrame.LayoutOrder=4; pickerFrame.ZIndex=3; pickerFrame.Parent=sc; corner(pickerFrame,11); stroke(pickerFrame,W3,1,0.92)
+    local colorGrid=Instance.new("Frame"); colorGrid.Size=UDim2.new(1,-20,0,0); colorGrid.Position=UDim2.new(0,10,0,10); colorGrid.BackgroundTransparency=1; colorGrid.ZIndex=4; colorGrid.Parent=pickerFrame
+    local gridL=Instance.new("UIGridLayout"); gridL.CellSize=UDim2.new(0,28,0,28); gridL.CellPadding=UDim2.new(0,8,0,8); gridL.HorizontalAlignment=Enum.HorizontalAlignment.Left; gridL.VerticalAlignment=Enum.VerticalAlignment.Top; gridL.Parent=colorGrid
+    local COLS=8; local ROWS=math.ceil(#PRESETS/COLS); local GRID_H=ROWS*36+18; colorGrid.Size=UDim2.new(1,-20,0,GRID_H)
     for _,preset in ipairs(PRESETS) do
-        -- Circle button
-        local circle=Instance.new("TextButton")
-        circle.Size=UDim2.new(0,28,0,28)
-        circle.BackgroundColor3=preset.c
-        circle.AutoButtonColor=false; circle.Text=""; circle.ZIndex=5; circle.Parent=colorGrid
-        corner(circle,14) -- full circle
-
-        -- Selected ring
+        local circle=Instance.new("TextButton"); circle.Size=UDim2.new(0,28,0,28); circle.BackgroundColor3=preset.c; circle.AutoButtonColor=false; circle.Text=""; circle.ZIndex=5; circle.Parent=colorGrid; corner(circle,14)
         local sel=stroke(circle,W3,2,0.78)
-
-        local function updateSel()
-            if theme.key==preset.key then tw(sel,0.18,{Transparency=0,Thickness=2.5}) else tw(sel,0.18,{Transparency=0.78,Thickness=2}) end
-        end
+        local function updateSel() if theme.key==preset.key then tw(sel,0.18,{Transparency=0,Thickness=2.5}) else tw(sel,0.18,{Transparency=0.78,Thickness=2}) end end
         onTheme(function() updateSel() end)
-
-        circle.MouseEnter:Connect(function()
-            twBack(circle,0.16,{Size=UDim2.new(0,32,0,32)}); tw(sel,0.13,{Transparency=0})
-        end)
-        circle.MouseLeave:Connect(function()
-            tw(circle,0.16,{Size=UDim2.new(0,28,0,28)}); updateSel()
-        end)
-        circle.MouseButton1Down:Connect(function()
-            tw(circle,0.07,{Size=UDim2.new(0,24,0,24)},Enum.EasingStyle.Quad)
-        end)
-        circle.MouseButton1Click:Connect(function()
-            twBack(circle,0.18,{Size=UDim2.new(0,28,0,28)})
-            task.spawn(function() changeColor(preset.key) end)
-        end)
+        circle.MouseEnter:Connect(function() twBack(circle,0.16,{Size=UDim2.new(0,32,0,32)}); tw(sel,0.13,{Transparency=0}) end)
+        circle.MouseLeave:Connect(function() tw(circle,0.16,{Size=UDim2.new(0,28,0,28)}); updateSel() end)
+        circle.MouseButton1Down:Connect(function() tw(circle,0.07,{Size=UDim2.new(0,24,0,24)},Enum.EasingStyle.Quad) end)
+        circle.MouseButton1Click:Connect(function() twBack(circle,0.18,{Size=UDim2.new(0,28,0,28)}); task.spawn(function() changeColor(preset.key) end) end)
     end
-
     chBtn.MouseButton1Click:Connect(function()
-        pickerOpen=not pickerOpen
-        if pickerOpen then
-            tw(chArrow,0.22,{Rotation=270})
-            tw(pickerFrame,0.38,{Size=UDim2.new(1,0,0,GRID_H+22)},Enum.EasingStyle.Quart)
-        else
-            tw(chArrow,0.22,{Rotation=90})
-            tw(pickerFrame,0.30,{Size=UDim2.new(1,0,0,0)},Enum.EasingStyle.Quart)
-        end
+        pickerOpen2=not pickerOpen2
+        if pickerOpen2 then tw(chArrow,0.22,{Rotation=270}); tw(pickerFrame,0.38,{Size=UDim2.new(1,0,0,GRID_H+22)},Enum.EasingStyle.Quart)
+        else tw(chArrow,0.22,{Rotation=90}); tw(pickerFrame,0.30,{Size=UDim2.new(1,0,0,0)},Enum.EasingStyle.Quart) end
     end)
-
     makeSep(sc,5)
-
-    -- Silence notifications
     local silState={silent=false}
-    makeToggle(sc,"Silence Notifications","silent",silState,6,function(v)
-        notifSilent=v; notify("Notifications",v and "Silenced" or "Enabled",2,true)
-    end)
+    makeToggle(sc,"Silence Notifications","silent",silState,6,function(v) notifSilent=v; notify("Notifications",v and "Silenced" or "Enabled",2,true) end)
     makeSep(sc,7)
-
-    -- Minimap section
-    local mapCapt=Instance.new("TextLabel"); mapCapt.Size=UDim2.new(1,0,0,16); mapCapt.BackgroundTransparency=1
-    mapCapt.Text="Minimap"; mapCapt.Font=Enum.Font.GothamBold; mapCapt.TextSize=12; mapCapt.TextColor3=theme.sub
-    mapCapt.TextXAlignment=Enum.TextXAlignment.Left; mapCapt.LayoutOrder=8; mapCapt.ZIndex=3; mapCapt.Parent=sc
+    local mapCapt=Instance.new("TextLabel"); mapCapt.Size=UDim2.new(1,0,0,16); mapCapt.BackgroundTransparency=1; mapCapt.Text="Minimap"; mapCapt.Font=Enum.Font.GothamBold; mapCapt.TextSize=12; mapCapt.TextColor3=theme.sub; mapCapt.TextXAlignment=Enum.TextXAlignment.Left; mapCapt.LayoutOrder=8; mapCapt.ZIndex=3; mapCapt.Parent=sc
     local mapEnCfg={Enabled=false}
     makeToggle(sc,"Enable Minimap","Enabled",mapEnCfg,9,function(v)
         MapSettings.Enabled=v
-        if v then
-            if not mapFrame then buildMinimap() end; mapFrame.Visible=true; mapFrame.Size=UDim2.new(0,0,0,0)
-            twBack(mapFrame,0.48,{Size=UDim2.new(0,MapSettings.Size,0,MapSettings.Size)}); notify("Minimap","Enabled.",2)
-        else
-            if mapFrame then tw(mapFrame,0.28,{Size=UDim2.new(0,0,0,0)},Enum.EasingStyle.Quart); task.delay(0.30,function() if mapFrame then mapFrame.Visible=false end end) end
-            notify("Minimap","Disabled.",2)
-        end
+        if v then if not mapFrame then buildMinimap() end; mapFrame.Visible=true; mapFrame.Size=UDim2.new(0,0,0,0); twBack(mapFrame,0.48,{Size=UDim2.new(0,MapSettings.Size,0,MapSettings.Size)}); notify("Minimap","Enabled.",2)
+        else if mapFrame then tw(mapFrame,0.28,{Size=UDim2.new(0,0,0,0)},Enum.EasingStyle.Quart); task.delay(0.30,function() if mapFrame then mapFrame.Visible=false end end) end; notify("Minimap","Disabled.",2) end
     end)
     makeSep(sc,10)
-
     local msRow=makeCard(sc,11,38)
-    local msLbl=Instance.new("TextLabel"); msLbl.Size=UDim2.new(0.55,0,1,0); msLbl.Position=UDim2.new(0,14,0,0)
-    msLbl.BackgroundTransparency=1; msLbl.Text="Map Size: "..MapSettings.Size; msLbl.Font=Enum.Font.GothamMedium; msLbl.TextSize=13
-    msLbl.TextColor3=theme.text; msLbl.TextXAlignment=Enum.TextXAlignment.Left; msLbl.ZIndex=4; msLbl.Parent=msRow
-    local msBox=Instance.new("TextBox"); msBox.AnchorPoint=Vector2.new(1,0.5); msBox.Position=UDim2.new(1,-10,0.5,0)
-    msBox.Size=UDim2.new(0,66,0,24); msBox.BackgroundColor3=rgb(16,16,26); msBox.TextColor3=W3; msBox.Text=tostring(MapSettings.Size)
-    msBox.Font=Enum.Font.GothamMedium; msBox.TextSize=12; msBox.ZIndex=5; msBox.Parent=msRow; corner(msBox,7); stroke(msBox,W3,1,0.90)
-    uipad(msBox,6,0,0,0)
-    msBox.FocusLost:Connect(function()
-        local v=tonumber(msBox.Text)
-        if v then MapSettings.Size=math.clamp(math.floor(v),80,400); msBox.Text=tostring(MapSettings.Size); msLbl.Text="Map Size: "..MapSettings.Size
-            if mapFrame then buildMinimap(); if MapSettings.Enabled then mapFrame.Visible=true end end
-        else msBox.Text=tostring(MapSettings.Size) end
-    end)
+    local msLbl=Instance.new("TextLabel"); msLbl.Size=UDim2.new(0.55,0,1,0); msLbl.Position=UDim2.new(0,14,0,0); msLbl.BackgroundTransparency=1; msLbl.Text="Map Size: "..MapSettings.Size; msLbl.Font=Enum.Font.GothamMedium; msLbl.TextSize=13; msLbl.TextColor3=theme.text; msLbl.TextXAlignment=Enum.TextXAlignment.Left; msLbl.ZIndex=4; msLbl.Parent=msRow
+    local msBox=Instance.new("TextBox"); msBox.AnchorPoint=Vector2.new(1,0.5); msBox.Position=UDim2.new(1,-10,0.5,0); msBox.Size=UDim2.new(0,66,0,24); msBox.BackgroundColor3=rgb(16,16,26); msBox.TextColor3=W3; msBox.Text=tostring(MapSettings.Size); msBox.Font=Enum.Font.GothamMedium; msBox.TextSize=12; msBox.ZIndex=5; msBox.Parent=msRow; corner(msBox,7); stroke(msBox,W3,1,0.90); uipad(msBox,6,0,0,0)
+    msBox.FocusLost:Connect(function() local v=tonumber(msBox.Text); if v then MapSettings.Size=math.clamp(math.floor(v),80,400); msBox.Text=tostring(MapSettings.Size); msLbl.Text="Map Size: "..MapSettings.Size; if mapFrame then buildMinimap(); if MapSettings.Enabled then mapFrame.Visible=true end end else msBox.Text=tostring(MapSettings.Size) end end)
     makeSep(sc,12)
-
     local wrRow=makeCard(sc,13,38)
-    local wrLbl=Instance.new("TextLabel"); wrLbl.Size=UDim2.new(0.55,0,1,0); wrLbl.Position=UDim2.new(0,14,0,0)
-    wrLbl.BackgroundTransparency=1; wrLbl.Text="World Radius: "..MapSettings.WorldRadius; wrLbl.Font=Enum.Font.GothamMedium; wrLbl.TextSize=13
-    wrLbl.TextColor3=theme.text; wrLbl.TextXAlignment=Enum.TextXAlignment.Left; wrLbl.ZIndex=4; wrLbl.Parent=wrRow
-    local wrBox=Instance.new("TextBox"); wrBox.AnchorPoint=Vector2.new(1,0.5); wrBox.Position=UDim2.new(1,-10,0.5,0)
-    wrBox.Size=UDim2.new(0,66,0,24); wrBox.BackgroundColor3=rgb(16,16,26); wrBox.TextColor3=W3; wrBox.Text=tostring(MapSettings.WorldRadius)
-    wrBox.Font=Enum.Font.GothamMedium; wrBox.TextSize=12; wrBox.ZIndex=5; wrBox.Parent=wrRow; corner(wrBox,7); stroke(wrBox,W3,1,0.90)
-    uipad(wrBox,6,0,0,0)
-    wrBox.FocusLost:Connect(function()
-        local v=tonumber(wrBox.Text)
-        if v then MapSettings.WorldRadius=math.clamp(math.floor(v),50,2000); wrBox.Text=tostring(MapSettings.WorldRadius); wrLbl.Text="World Radius: "..MapSettings.WorldRadius
-        else wrBox.Text=tostring(MapSettings.WorldRadius) end
-    end)
+    local wrLbl=Instance.new("TextLabel"); wrLbl.Size=UDim2.new(0.55,0,1,0); wrLbl.Position=UDim2.new(0,14,0,0); wrLbl.BackgroundTransparency=1; wrLbl.Text="World Radius: "..MapSettings.WorldRadius; wrLbl.Font=Enum.Font.GothamMedium; wrLbl.TextSize=13; wrLbl.TextColor3=theme.text; wrLbl.TextXAlignment=Enum.TextXAlignment.Left; wrLbl.ZIndex=4; wrLbl.Parent=wrRow
+    local wrBox=Instance.new("TextBox"); wrBox.AnchorPoint=Vector2.new(1,0.5); wrBox.Position=UDim2.new(1,-10,0.5,0); wrBox.Size=UDim2.new(0,66,0,24); wrBox.BackgroundColor3=rgb(16,16,26); wrBox.TextColor3=W3; wrBox.Text=tostring(MapSettings.WorldRadius); wrBox.Font=Enum.Font.GothamMedium; wrBox.TextSize=12; wrBox.ZIndex=5; wrBox.Parent=wrRow; corner(wrBox,7); stroke(wrBox,W3,1,0.90); uipad(wrBox,6,0,0,0)
+    wrBox.FocusLost:Connect(function() local v=tonumber(wrBox.Text); if v then MapSettings.WorldRadius=math.clamp(math.floor(v),50,2000); wrBox.Text=tostring(MapSettings.WorldRadius); wrLbl.Text="World Radius: "..MapSettings.WorldRadius else wrBox.Text=tostring(MapSettings.WorldRadius) end end)
     makeSep(sc,14)
-    makeBtn(sc,"Move Map Position",rgb(60,96,208),15,function()
-        if not MapSettings.Enabled then notify("Minimap","Enable minimap first!",2,true); return end; enterMapMove()
-    end)
+    makeBtn(sc,"Move Map Position",rgb(60,96,208),15,function() if not MapSettings.Enabled then notify("Minimap","Enable minimap first!",2,true); return end; enterMapMove() end)
     makeSep(sc,16)
     makeBtn(sc,"Resize Window",rgb(50,106,192),17,function() if enterResize then enterResize() end end)
     makeSep(sc,18)
@@ -1359,9 +1266,7 @@ do
     end)
 end
 
--- ═══════════════════════════════════
--- ORB  (no UIStroke aura, no squared glow)
--- ═══════════════════════════════════
+-- ══ ORB ══════════════════════════════════════════════════
 local ORB_SZ=46
 local orb=Instance.new("TextButton"); orb.AnchorPoint=Vector2.new(0.5,0.5)
 orb.Size=UDim2.new(0,ORB_SZ,0,ORB_SZ); orb.Position=UDim2.new(0,46,0.42,0)
@@ -1369,23 +1274,14 @@ orb.BackgroundColor3=rgb(13,13,21); orb.BackgroundTransparency=0
 orb.AutoButtonColor=false; orb.Text=VMARK; orb.Font=Enum.Font.GothamBlack; orb.TextSize=17; orb.TextColor3=W3
 orb.ZIndex=46; orb.Active=true; orb.Parent=SG; corner(orb,ORB_SZ/2)
 
--- Thin border only
-local orbSt=stroke(orb,W3,1.6,0)
-local orbSG=Instance.new("UIGradient"); orbSG.Parent=orbSt
+local orbSt=stroke(orb,W3,1.6,0); local orbSG=Instance.new("UIGradient"); orbSG.Parent=orbSt
 onTheme(function(p) orbSG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0.0,p:Lerp(BK,0.66)),ColorSequenceKeypoint.new(0.35,p:Lerp(W3,0.22)),ColorSequenceKeypoint.new(0.68,p:Lerp(BK,0.52)),ColorSequenceKeypoint.new(1.0,p:Lerp(BK,0.66))}) end)
-
--- Text gradient
 local orbTG=Instance.new("UIGradient"); orbTG.Parent=orb
 onTheme(function(p) orbTG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p),ColorSequenceKeypoint.new(0.6,W3),ColorSequenceKeypoint.new(1,p)}) end)
-
--- Subtle inner ring
 local orbInner=Instance.new("Frame"); orbInner.AnchorPoint=Vector2.new(0.5,0.5); orbInner.Position=UDim2.new(0.5,0,0.5,0)
 orbInner.Size=UDim2.new(0.64,0,0.64,0); orbInner.BackgroundTransparency=1; orbInner.ZIndex=45; orbInner.Parent=orb; corner(orbInner,18)
 local orbIS=stroke(orbInner,W3,0.8,0.84); onTheme(function(p) orbIS.Color=p end)
-
--- Soft breathing glow (ImageLabel, stays round)
-local orbGlowBg=Instance.new("ImageLabel")
-orbGlowBg.AnchorPoint=Vector2.new(0.5,0.5); orbGlowBg.Position=UDim2.new(0.5,0,0.5,0)
+local orbGlowBg=Instance.new("ImageLabel"); orbGlowBg.AnchorPoint=Vector2.new(0.5,0.5); orbGlowBg.Position=UDim2.new(0.5,0,0.5,0)
 orbGlowBg.Size=UDim2.new(2.0,0,2.0,0); orbGlowBg.BackgroundTransparency=1
 orbGlowBg.Image="rbxassetid://5028857084"; orbGlowBg.ImageColor3=theme.primary
 orbGlowBg.ImageTransparency=0.88; orbGlowBg.ScaleType=Enum.ScaleType.Slice
@@ -1394,72 +1290,42 @@ onTheme(function(p) orbGlowBg.ImageColor3=p end)
 
 task.spawn(function()
     while orb.Parent do
-        orbSG.Rotation=(orbSG.Rotation+1.6)%360
-        orbTG.Offset=Vector2.new(math.sin(os.clock()*1.0)*0.22,0)
-        if not orbBusy then
-            local p2=1+math.sin(os.clock()*1.9)*0.034
-            local s2=ORB_SZ*p2; orb.Size=UDim2.new(0,s2,0,s2)
-        end
+        orbSG.Rotation=(orbSG.Rotation+1.6)%360; orbTG.Offset=Vector2.new(math.sin(os.clock()*1.0)*0.22,0)
+        if not orbBusy then local p2=1+math.sin(os.clock()*1.9)*0.034; local s2=ORB_SZ*p2; orb.Size=UDim2.new(0,s2,0,s2) end
         orbGlowBg.ImageTransparency=0.86+0.06*math.sin(os.clock()*1.4)
         RunService.RenderStepped:Wait()
     end
 end)
-
 task.defer(function()
     local ap=orb.AbsolutePosition; local as=orb.AbsoluteSize
     orbCX=ap.X+as.X/2; orbCY=ap.Y+as.Y/2; orb.Position=UDim2.new(0,orbCX,0,orbCY)
 end)
 
--- ═══════════════════════════════════
--- WINDOW OPEN/CLOSE → particles fly to orb
--- ═══════════════════════════════════
+-- ══ WINDOW OPEN/CLOSE (с частицами) ══════════════════════
 local function setWindow(show)
-    if winCooldown then return end
-    winCooldown=true
-
+    if winCooldown then return end; winCooldown=true
     if show then
         win.Visible=true; shadow.Visible=true
-        -- Expand from orb position
-        local vp=Camera.ViewportSize
-        win.AnchorPoint=Vector2.new(0.5,0.5)
-        win.Position=UDim2.new(0,orbCX,0,orbCY)
-        win.Size=UDim2.new(0,12,0,12)
-        shadow.Size=UDim2.new(0,6,0,6)
-        shadow.Position=UDim2.new(0,orbCX,0,orbCY+10)
+        win.Position=UDim2.new(0,orbCX,0,orbCY); win.Size=UDim2.new(0,12,0,12)
+        shadow.Size=UDim2.new(0,6,0,6); shadow.Position=UDim2.new(0,orbCX,0,orbCY+10)
         tw(win,0.50,{Size=UDim2.new(0,W,0,H),Position=UDim2.new(0.5,winPosX,0.5,winPosY)},Enum.EasingStyle.Back)
         tw(shadow,0.50,{Size=UDim2.new(0,W+20,0,H+20),Position=UDim2.new(0.5,winPosX,0.5,winPosY+12)},Enum.EasingStyle.Back)
         task.delay(0.30,function() winCooldown=false end)
     else
-        -- Spawn small colored particles that fly toward orb
-        local numP=8
-        local targX=orbCX; local targY=orbCY
         local vp=Camera.ViewportSize
-        -- Get window screen position
-        local winScrX=vp.X/2+winPosX; local winScrY=vp.Y/2+winPosY
-
-        for i=1,numP do
-            local p=Instance.new("Frame")
-            local sz=math.random(6,14)
-            p.AnchorPoint=Vector2.new(0.5,0.5)
-            p.Size=UDim2.new(0,sz,0,sz)
-            -- Spread from window center
-            local sx=winScrX+(math.random()-0.5)*W*0.7
-            local sy=winScrY+(math.random()-0.5)*H*0.7
-            p.Position=UDim2.new(0,sx,0,sy)
-            p.BackgroundColor3=theme.primary; p.BackgroundTransparency=0.1
-            p.BorderSizePixel=0; p.ZIndex=50; p.Parent=SG; corner(p,sz/2)
-            -- Fly to orb
-            local delay2=(i-1)*0.032
-            task.delay(delay2,function()
-                tw(p,0.38,{Position=UDim2.new(0,targX,0,targY),Size=UDim2.new(0,4,0,4),BackgroundTransparency=0.92},Enum.EasingStyle.Quart)
+        local winSX=vp.X/2+winPosX; local winSY=vp.Y/2+winPosY
+        for i=1,8 do
+            local p=Instance.new("Frame"); local sz=math.random(6,14)
+            p.AnchorPoint=Vector2.new(0.5,0.5); p.Size=UDim2.new(0,sz,0,sz)
+            p.Position=UDim2.new(0,winSX+(math.random()-0.5)*W*0.7,0,winSY+(math.random()-0.5)*H*0.7)
+            p.BackgroundColor3=theme.primary; p.BackgroundTransparency=0.1; p.BorderSizePixel=0; p.ZIndex=50; p.Parent=SG; corner(p,sz/2)
+            task.delay((i-1)*0.032,function()
+                tw(p,0.38,{Position=UDim2.new(0,orbCX,0,orbCY),Size=UDim2.new(0,4,0,4),BackgroundTransparency=0.92},Enum.EasingStyle.Quart)
                 task.delay(0.40,function() if p then p:Destroy() end end)
             end)
         end
-
-        -- Shrink window to orb
         tw(win,0.36,{Size=UDim2.new(0,10,0,10),Position=UDim2.new(0,orbCX,0,orbCY)},Enum.EasingStyle.Quart)
-        tw(shadow,0.30,{Size=UDim2.new(0,4,0,4),BackgroundTransparency=0.72},Enum.EasingStyle.Quart)
-
+        tw(shadow,0.30,{Size=UDim2.new(0,4,0,4),BackgroundTransparency=1},Enum.EasingStyle.Quart)
         task.delay(0.38,function()
             if not windowShown then
                 win.Visible=false; shadow.Visible=false
@@ -1497,94 +1363,56 @@ do
         end; dragging=false
     end))
 end
-
 minBtn.MouseButton1Click:Connect(function() setWindow(false) end)
 
--- ═══════════════════════════════════
--- GEAR / SETTINGS  (no overlap fix)
--- ═══════════════════════════════════
+-- ══ GEAR / SETTINGS ══════════════════════════════════════
 local prevSection="Home"
 gearBtn.MouseButton1Click:Connect(function()
-    if navCooldown then return end
-    navCooldown=true
+    if navCooldown then return end; navCooldown=true
     settingsOpen=not settingsOpen
     if settingsOpen then
         prevSection=currentSection
-        -- Hide all, show Settings
         for _,sec in pairs(sections) do sec.page.Visible=false end
-        sections.Settings.page.Visible=true
-        animateItems(sections.Settings.scroll)
-        -- Nav button states
+        sections.Settings.page.Visible=true; animateItems(sections.Settings.scroll)
         for _,data in pairs(navBtns) do
             tw(data.btn,0.18,{BackgroundTransparency=1}); tw(data.line,0.16,{Size=UDim2.new(0,0,0,3)}); data.line.Visible=false
             tw(data.icon,0.18,{TextColor3=theme.sub}); tw(data.lbl,0.18,{TextColor3=theme.sub})
         end
         tw(gearBtn,0.18,{TextColor3=theme.primary})
     else
-        -- Hide Settings, show previous section
-        sections.Settings.page.Visible=false
-        tw(gearBtn,0.18,{TextColor3=theme.sub})
-        -- Restore nav state for prevSection
+        sections.Settings.page.Visible=false; tw(gearBtn,0.18,{TextColor3=theme.sub})
         for bn,data in pairs(navBtns) do
             local active=(bn==prevSection)
             tw(data.btn,0.18,{BackgroundTransparency=active and 0.68 or 1})
-            if active then
-                data.line.Visible=true; data.line.Size=UDim2.new(0,0,0,3)
-                tw(data.line,0.32,{Size=UDim2.new(0,26,0,3)},Enum.EasingStyle.Quart)
-                tw(data.icon,0.16,{TextColor3=theme.primary}); tw(data.lbl,0.16,{TextColor3=W3})
-            else
-                tw(data.line,0.16,{Size=UDim2.new(0,0,0,3)}); data.line.Visible=false
-                tw(data.icon,0.16,{TextColor3=theme.sub}); tw(data.lbl,0.16,{TextColor3=theme.sub})
-            end
+            if active then data.line.Visible=true; data.line.Size=UDim2.new(0,0,0,3); tw(data.line,0.32,{Size=UDim2.new(0,26,0,3)},Enum.EasingStyle.Quart); tw(data.icon,0.16,{TextColor3=theme.primary}); tw(data.lbl,0.16,{TextColor3=W3})
+            else tw(data.line,0.16,{Size=UDim2.new(0,0,0,3)}); data.line.Visible=false; tw(data.icon,0.16,{TextColor3=theme.sub}); tw(data.lbl,0.16,{TextColor3=theme.sub}) end
         end
-        sections[prevSection].page.Visible=true
-        animateItems(sections[prevSection].scroll)
-        currentSection=prevSection
+        sections[prevSection].page.Visible=true; animateItems(sections[prevSection].scroll); currentSection=prevSection
     end
     task.delay(0.30,function() navCooldown=false end)
 end)
 onTheme(function(p) if settingsOpen then gearBtn.TextColor3=p end end)
 
--- ═══════════════════════════════════
--- CLOSE ANIMATION
--- ═══════════════════════════════════
+-- ══ CLOSE ANIMATION ══════════════════════════════════════
 local function doClose()
-    -- Particles fly to orb, then orb pulses
-    local targX=orbCX; local targY=orbCY
-    local vp=Camera.ViewportSize
-    local winScrX=vp.X/2+winPosX; local winScrY=vp.Y/2+winPosY
-
-    local numP=14
-    for i=1,numP do
-        local p=Instance.new("Frame")
-        local sz=math.random(8,18)
+    local targX=orbCX; local targY=orbCY; local vp=Camera.ViewportSize
+    local winSX=vp.X/2+winPosX; local winSY=vp.Y/2+winPosY
+    for i=1,14 do
+        local p=Instance.new("Frame"); local sz=math.random(8,18)
         p.AnchorPoint=Vector2.new(0.5,0.5); p.Size=UDim2.new(0,sz,0,sz)
-        local sx=winScrX+(math.random()-0.5)*W*0.8; local sy=winScrY+(math.random()-0.5)*H*0.8
-        p.Position=UDim2.new(0,sx,0,sy); p.BackgroundColor3=theme.primary
-        p.BackgroundTransparency=0; p.BorderSizePixel=0; p.ZIndex=50; p.Parent=SG; corner(p,sz/2)
+        p.Position=UDim2.new(0,winSX+(math.random()-0.5)*W*0.8,0,winSY+(math.random()-0.5)*H*0.8)
+        p.BackgroundColor3=theme.primary; p.BackgroundTransparency=0; p.BorderSizePixel=0; p.ZIndex=50; p.Parent=SG; corner(p,sz/2)
         task.delay((i-1)*0.028,function()
             tw(p,0.44,{Position=UDim2.new(0,targX,0,targY),Size=UDim2.new(0,3,0,3),BackgroundTransparency=0.95},Enum.EasingStyle.Quart)
             task.delay(0.46,function() if p then p:Destroy() end end)
         end)
     end
-
-    -- Fade + shrink window
-    for _,d in ipairs(body:GetDescendants()) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.22,{TextTransparency=1}) end) end
-    end
-    for _,d in ipairs(header:GetDescendants()) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.22,{TextTransparency=1}) end) end
-    end
+    for _,d in ipairs(body:GetDescendants()) do if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.22,{TextTransparency=1}) end) end end
+    for _,d in ipairs(header:GetDescendants()) do if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() tw(d,0.22,{TextTransparency=1}) end) end end
     task.wait(0.18)
     tw(win,0.40,{Size=UDim2.new(0,8,0,8),Position=UDim2.new(0,targX,0,targY)},Enum.EasingStyle.Quart)
-    tw(shadow,0.32,{Size=UDim2.new(0,4,0,4),BackgroundTransparency=0.72},Enum.EasingStyle.Quart)
-    winStroke.Transparency=1
-
-    -- Orb flash
-    task.delay(0.44,function()
-        tw(orbGlowBg,0.22,{ImageTransparency=0.4}); task.wait(0.22); tw(orbGlowBg,0.44,{ImageTransparency=0.88})
-    end)
-
+    tw(shadow,0.32,{Size=UDim2.new(0,4,0,4),BackgroundTransparency=1},Enum.EasingStyle.Quart); winStroke.Transparency=1
+    task.delay(0.44,function() tw(orbGlowBg,0.22,{ImageTransparency=0.4}); task.wait(0.22); tw(orbGlowBg,0.44,{ImageTransparency=0.88}) end)
     task.delay(0.58,function()
         for _,c in ipairs(conns) do pcall(function() c:Disconnect() end) end
         pcall(function() SG:Destroy() end)
@@ -1592,9 +1420,7 @@ local function doClose()
 end
 closeBtn.MouseButton1Click:Connect(function() showConfirm("Close Universal?","Script will unload.",doClose) end)
 
--- ═══════════════════════════════════
--- RESIZE
--- ═══════════════════════════════════
+-- ══ RESIZE ════════════════════════════════════════════════
 local MIN_W,MAX_W=380,820; local MIN_H,MAX_H=250,540
 applyWindowSize=function(w,h,animate)
     W=math.clamp(math.floor(w),MIN_W,MAX_W); H=math.clamp(math.floor(h),MIN_H,MAX_H); cfg.win_w,cfg.win_h=W,H
@@ -1604,36 +1430,24 @@ applyWindowSize=function(w,h,animate)
     end
 end
 do
-    local dim=Instance.new("TextButton"); dim.Size=UDim2.new(1,0,1,0); dim.BackgroundColor3=BK
-    dim.BackgroundTransparency=1; dim.Text=""; dim.AutoButtonColor=false; dim.Visible=false; dim.ZIndex=50; dim.Parent=win
-    local acts=Instance.new("Frame"); acts.AnchorPoint=Vector2.new(0.5,0.5); acts.Position=UDim2.new(0.5,0,0.5,0)
-    acts.Size=UDim2.new(0,232,0,44); acts.BackgroundTransparency=1; acts.Visible=false; acts.ZIndex=52; acts.Parent=win
-    local al=Instance.new("UIListLayout"); al.FillDirection=Enum.FillDirection.Horizontal; al.Padding=UDim.new(0,12)
-    al.HorizontalAlignment=Enum.HorizontalAlignment.Center; al.VerticalAlignment=Enum.VerticalAlignment.Center; al.Parent=acts
+    local dim=Instance.new("TextButton"); dim.Size=UDim2.new(1,0,1,0); dim.BackgroundColor3=BK; dim.BackgroundTransparency=1; dim.Text=""; dim.AutoButtonColor=false; dim.Visible=false; dim.ZIndex=50; dim.Parent=win
+    local acts=Instance.new("Frame"); acts.AnchorPoint=Vector2.new(0.5,0.5); acts.Position=UDim2.new(0.5,0,0.5,0); acts.Size=UDim2.new(0,232,0,44); acts.BackgroundTransparency=1; acts.Visible=false; acts.ZIndex=52; acts.Parent=win
+    local al=Instance.new("UIListLayout"); al.FillDirection=Enum.FillDirection.Horizontal; al.Padding=UDim.new(0,12); al.HorizontalAlignment=Enum.HorizontalAlignment.Center; al.VerticalAlignment=Enum.VerticalAlignment.Center; al.Parent=acts
     local function actBtn(txt,col)
-        local b=Instance.new("TextButton"); b.Size=UDim2.new(0,108,0,40); b.BackgroundColor3=col; b.Text=txt
-        b.Font=Enum.Font.GothamBold; b.TextSize=14; b.TextColor3=W3; b.AutoButtonColor=false; b.ZIndex=53; b.Parent=acts; corner(b,12); stroke(b,W3,1,0.84)
-        b.MouseEnter:Connect(function() tw(b,0.12,{BackgroundColor3=col:Lerp(W3,0.16),Size=UDim2.new(0,112,0,42)}) end)
-        b.MouseLeave:Connect(function() tw(b,0.16,{BackgroundColor3=col,Size=UDim2.new(0,108,0,40)}) end)
-        b.MouseButton1Down:Connect(function() tw(b,0.07,{BackgroundColor3=col:Lerp(BK,0.16)},Enum.EasingStyle.Quad) end)
-        b.MouseButton1Up:Connect(function() tw(b,0.13,{BackgroundColor3=col}) end)
-        return b
+        local b=Instance.new("TextButton"); b.Size=UDim2.new(0,108,0,40); b.BackgroundColor3=col; b.Text=txt; b.Font=Enum.Font.GothamBold; b.TextSize=14; b.TextColor3=W3; b.AutoButtonColor=false; b.ZIndex=53; b.Parent=acts; corner(b,12); stroke(b,W3,1,0.84)
+        b.MouseEnter:Connect(function() tw(b,0.12,{BackgroundColor3=col:Lerp(W3,0.16),Size=UDim2.new(0,112,0,42)}) end); b.MouseLeave:Connect(function() tw(b,0.16,{BackgroundColor3=col,Size=UDim2.new(0,108,0,40)}) end)
+        b.MouseButton1Down:Connect(function() tw(b,0.07,{BackgroundColor3=col:Lerp(BK,0.16)},Enum.EasingStyle.Quad) end); b.MouseButton1Up:Connect(function() tw(b,0.13,{BackgroundColor3=col}) end); return b
     end
     local saveBtn=actBtn("Save",rgb(40,168,74)); local exitBtn=actBtn("Exit",rgb(180,44,50))
     local handles={}; local startW,startH,startMouse,activeHandle; local ssW,ssH=0,0
     local function mkHandle(edge)
-        local h=Instance.new("TextButton"); h.Text=""; h.AutoButtonColor=false; h.BackgroundColor3=W3
-        h.BackgroundTransparency=0.22; h.Visible=false; h.ZIndex=55; h.Parent=win; corner(h,5)
-        local hg=Instance.new("UIGradient"); hg.Parent=h
-        onTheme(function(p) hg.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p:Lerp(BK,0.62)),ColorSequenceKeypoint.new(0.5,p:Lerp(W3,0.28)),ColorSequenceKeypoint.new(1,p:Lerp(BK,0.62))}) end)
-        if edge=="left"   then h.AnchorPoint=Vector2.new(0,0.5); h.Position=UDim2.new(0,4,0.5,0); h.Size=UDim2.new(0,7,0,66)
-        elseif edge=="right"  then h.AnchorPoint=Vector2.new(1,0.5); h.Position=UDim2.new(1,-4,0.5,0); h.Size=UDim2.new(0,7,0,66)
-        elseif edge=="top"    then h.AnchorPoint=Vector2.new(0.5,0); h.Position=UDim2.new(0.5,0,0,4); h.Size=UDim2.new(0,78,0,7)
+        local h=Instance.new("TextButton"); h.Text=""; h.AutoButtonColor=false; h.BackgroundColor3=W3; h.BackgroundTransparency=0.22; h.Visible=false; h.ZIndex=55; h.Parent=win; corner(h,5)
+        local hg=Instance.new("UIGradient"); hg.Parent=h; onTheme(function(p) hg.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p:Lerp(BK,0.62)),ColorSequenceKeypoint.new(0.5,p:Lerp(W3,0.28)),ColorSequenceKeypoint.new(1,p:Lerp(BK,0.62))}) end)
+        if edge=="left" then h.AnchorPoint=Vector2.new(0,0.5); h.Position=UDim2.new(0,4,0.5,0); h.Size=UDim2.new(0,7,0,66)
+        elseif edge=="right" then h.AnchorPoint=Vector2.new(1,0.5); h.Position=UDim2.new(1,-4,0.5,0); h.Size=UDim2.new(0,7,0,66)
+        elseif edge=="top" then h.AnchorPoint=Vector2.new(0.5,0); h.Position=UDim2.new(0.5,0,0,4); h.Size=UDim2.new(0,78,0,7)
         else h.AnchorPoint=Vector2.new(0.5,1); h.Position=UDim2.new(0.5,0,1,-4); h.Size=UDim2.new(0,78,0,7) end
-        h.InputBegan:Connect(function(i)
-            if i.UserInputType~=Enum.UserInputType.MouseButton1 and i.UserInputType~=Enum.UserInputType.Touch then return end
-            activeHandle=edge; startW,startH=W,H; startMouse=UserInputService:GetMouseLocation(); tw(h,0.10,{BackgroundTransparency=0})
-        end)
+        h.InputBegan:Connect(function(i) if i.UserInputType~=Enum.UserInputType.MouseButton1 and i.UserInputType~=Enum.UserInputType.Touch then return end; activeHandle=edge; startW,startH=W,H; startMouse=UserInputService:GetMouseLocation(); tw(h,0.10,{BackgroundTransparency=0}) end)
         h.MouseEnter:Connect(function() tw(h,0.10,{BackgroundTransparency=0.06}) end)
         h.MouseLeave:Connect(function() if activeHandle~=edge then tw(h,0.13,{BackgroundTransparency=0.22}) end end)
         handles[edge]=h
@@ -1656,9 +1470,7 @@ do
     end
     local function finishResize()
         resizeActive=false; tw(dim,0.24,{BackgroundTransparency=1}); for _,h in pairs(handles) do tw(h,0.17,{BackgroundTransparency=1}) end
-        task.delay(0.26,function()
-            if not resizeActive then dim.Visible=false; acts.Visible=false; for _,h in pairs(handles) do h.Visible=false; h.BackgroundTransparency=0.22 end end
-        end)
+        task.delay(0.26,function() if not resizeActive then dim.Visible=false; acts.Visible=false; for _,h in pairs(handles) do h.Visible=false; h.BackgroundTransparency=0.22 end end end)
     end
     enterResize=function()
         if resizeActive then return end; resizeActive=true; ssW,ssH=W,H; setResVis(true); notify("Resize mode","Drag handles to resize. Save or Exit when done.",6,true)
@@ -1672,146 +1484,69 @@ do
     end)
 end
 
--- ═══════════════════════════════════
--- GLOBAL RENDER LOOP
--- ═══════════════════════════════════
+-- ══ GLOBAL RENDER ════════════════════════════════════════
 task.spawn(function()
     while SG.Parent do
         local t0=os.clock(); local dur=9
-        while os.clock()-t0<dur do
-            if SG.Parent then borderGrad.Rotation=((os.clock()-t0)/dur)*360 end
-            RunService.RenderStepped:Wait()
-        end; borderGrad.Rotation=0; task.wait(0.4)
+        while os.clock()-t0<dur do if SG.Parent then borderGrad.Rotation=((os.clock()-t0)/dur)*360 end; RunService.RenderStepped:Wait() end
+        borderGrad.Rotation=0; task.wait(0.4)
     end
 end)
 
 conn(RunService.RenderStepped:Connect(function()
     local t=os.clock()
-    -- Blob animation
     for i,bl in ipairs(blobs) do
-        local p2=0.93+0.05*math.sin(t*0.4+bl.bd.phase)
-        local s2=bl.bd.sz*p2
-        bl.f.Size=UDim2.new(s2,0,s2*1.3,0)
-        bl.f.BackgroundTransparency=0.92+0.04*math.sin(t*0.35+bl.bd.phase)
-        -- Very slow drift
+        local p2=0.93+0.05*math.sin(t*0.4+bl.bd.phase); local s2=bl.bd.sz*p2
+        bl.f.Size=UDim2.new(s2,0,s2*1.3,0); bl.f.BackgroundTransparency=0.92+0.04*math.sin(t*0.35+bl.bd.phase)
         bl.f.Position=UDim2.new(bl.bd.ax+0.05*math.sin(t*0.12+bl.bd.phase),0,bl.bd.ay+0.04*math.cos(t*0.09+bl.bd.phase),0)
     end
-    -- Line sweep
-    sweep.Position=UDim2.new(0,0,(((t*0.04)%1)),0)
-    sweep.BackgroundTransparency=0.93+0.04*math.sin(t*0.5)
-    -- Header shimmer
-    titleG.Offset=Vector2.new(math.sin(t*0.58)*0.36,0)
-    logoG.Offset=Vector2.new(math.sin(t*1.0)*0.22,0)
-    mmG.Offset=Vector2.new(math.sin(t*0.58)*0.36,0)
-    -- Shadow breathe
+    sweep.Position=UDim2.new(0,0,(((t*0.04)%1)),0); sweep.BackgroundTransparency=0.93+0.04*math.sin(t*0.5)
+    titleG.Offset=Vector2.new(math.sin(t*0.58)*0.36,0); logoG.Offset=Vector2.new(math.sin(t*1.0)*0.22,0)
     shadow.BackgroundTransparency=0.72+0.06*math.sin(t*0.42)
 end))
 
--- ═══════════════════════════════════
--- LOADING SCREEN
--- ═══════════════════════════════════
-local loadOv=Instance.new("Frame"); loadOv.Size=UDim2.new(1,0,1,0)
-loadOv.BackgroundColor3=theme.dark; loadOv.BackgroundTransparency=0; loadOv.BorderSizePixel=0
-loadOv.ZIndex=200; loadOv.Parent=win; corner(loadOv,16)
-local loadBG=Instance.new("UIGradient"); loadBG.Rotation=145
-loadBG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,rgb(16,16,24)),ColorSequenceKeypoint.new(1,rgb(7,7,12))}); loadBG.Parent=loadOv
-
-local spinRing=Instance.new("Frame"); spinRing.AnchorPoint=Vector2.new(0.5,0.5); spinRing.Position=UDim2.new(0.5,0,0.42,0)
-spinRing.Size=UDim2.new(0,54,0,54); spinRing.BackgroundTransparency=1; spinRing.ZIndex=202; spinRing.Parent=loadOv; corner(spinRing,27)
-local spinSt=stroke(spinRing,W3,3,0)
-local spinG=Instance.new("UIGradient"); spinG.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(0.54,1),NumberSequenceKeypoint.new(1,1)}); spinG.Parent=spinSt
-onTheme(function(p) spinSt.Color=p end)
-
-local spinDot=Instance.new("Frame"); spinDot.AnchorPoint=Vector2.new(0.5,0.5); spinDot.Size=UDim2.new(0,8,0,8)
-spinDot.BackgroundColor3=theme.primary; spinDot.BorderSizePixel=0; spinDot.ZIndex=203; spinDot.Parent=loadOv; corner(spinDot,4)
-onTheme(function(p) spinDot.BackgroundColor3=p end)
-
-local spinLogo=Instance.new("TextLabel"); spinLogo.AnchorPoint=Vector2.new(0.5,0.5); spinLogo.Position=UDim2.new(0.5,0,0.42,0)
-spinLogo.Size=UDim2.new(0,44,0,44); spinLogo.BackgroundTransparency=1; spinLogo.Text=VMARK
-spinLogo.Font=Enum.Font.GothamBlack; spinLogo.TextSize=15; spinLogo.TextColor3=W3; spinLogo.ZIndex=204; spinLogo.Parent=loadOv
-local spinLogoG=Instance.new("UIGradient"); spinLogoG.Parent=spinLogo
-onTheme(function(p) spinLogoG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p),ColorSequenceKeypoint.new(1,W3)}) end)
-
-local loadText=Instance.new("TextLabel"); loadText.AnchorPoint=Vector2.new(0.5,0); loadText.Position=UDim2.new(0.5,0,0.63,0)
-loadText.Size=UDim2.new(1,0,0,30); loadText.BackgroundTransparency=1; loadText.Text="loading"
-loadText.Font=Enum.Font.GothamBold; loadText.TextSize=22; loadText.TextColor3=W3; loadText.ZIndex=202; loadText.Parent=loadOv
-local loadTG=Instance.new("UIGradient"); loadTG.Parent=loadText
-onTheme(function(p) loadTG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p),ColorSequenceKeypoint.new(0.5,W3),ColorSequenceKeypoint.new(1,p)}) end)
-
-local dotHolder=Instance.new("Frame"); dotHolder.AnchorPoint=Vector2.new(0.5,0); dotHolder.Position=UDim2.new(0.5,0,0.79,0)
-dotHolder.Size=UDim2.new(0,60,0,14); dotHolder.BackgroundTransparency=1; dotHolder.ZIndex=202; dotHolder.Parent=loadOv
-local dotL2=Instance.new("UIListLayout"); dotL2.FillDirection=Enum.FillDirection.Horizontal; dotL2.Padding=UDim.new(0,10)
-dotL2.HorizontalAlignment=Enum.HorizontalAlignment.Center; dotL2.VerticalAlignment=Enum.VerticalAlignment.Center; dotL2.Parent=dotHolder
+-- ══ LOADING SCREEN ═══════════════════════════════════════
+local loadOv=Instance.new("Frame"); loadOv.Size=UDim2.new(1,0,1,0); loadOv.BackgroundColor3=theme.dark; loadOv.BackgroundTransparency=0; loadOv.BorderSizePixel=0; loadOv.ZIndex=200; loadOv.Parent=win; corner(loadOv,16)
+local loadBG=Instance.new("UIGradient"); loadBG.Rotation=145; loadBG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,rgb(16,16,24)),ColorSequenceKeypoint.new(1,rgb(7,7,12))}); loadBG.Parent=loadOv
+local spinRing=Instance.new("Frame"); spinRing.AnchorPoint=Vector2.new(0.5,0.5); spinRing.Position=UDim2.new(0.5,0,0.42,0); spinRing.Size=UDim2.new(0,54,0,54); spinRing.BackgroundTransparency=1; spinRing.ZIndex=202; spinRing.Parent=loadOv; corner(spinRing,27)
+local spinSt=stroke(spinRing,W3,3,0); local spinG=Instance.new("UIGradient"); spinG.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(0.54,1),NumberSequenceKeypoint.new(1,1)}); spinG.Parent=spinSt; onTheme(function(p) spinSt.Color=p end)
+local spinDot=Instance.new("Frame"); spinDot.AnchorPoint=Vector2.new(0.5,0.5); spinDot.Size=UDim2.new(0,8,0,8); spinDot.BackgroundColor3=theme.primary; spinDot.BorderSizePixel=0; spinDot.ZIndex=203; spinDot.Parent=loadOv; corner(spinDot,4); onTheme(function(p) spinDot.BackgroundColor3=p end)
+local spinLogo=Instance.new("TextLabel"); spinLogo.AnchorPoint=Vector2.new(0.5,0.5); spinLogo.Position=UDim2.new(0.5,0,0.42,0); spinLogo.Size=UDim2.new(0,44,0,44); spinLogo.BackgroundTransparency=1; spinLogo.Text=VMARK; spinLogo.Font=Enum.Font.GothamBlack; spinLogo.TextSize=15; spinLogo.TextColor3=W3; spinLogo.ZIndex=204; spinLogo.Parent=loadOv
+local spinLogoG=Instance.new("UIGradient"); spinLogoG.Parent=spinLogo; onTheme(function(p) spinLogoG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p),ColorSequenceKeypoint.new(1,W3)}) end)
+local loadText=Instance.new("TextLabel"); loadText.AnchorPoint=Vector2.new(0.5,0); loadText.Position=UDim2.new(0.5,0,0.63,0); loadText.Size=UDim2.new(1,0,0,30); loadText.BackgroundTransparency=1; loadText.Text="loading"; loadText.Font=Enum.Font.GothamBold; loadText.TextSize=22; loadText.TextColor3=W3; loadText.ZIndex=202; loadText.Parent=loadOv
+local loadTG=Instance.new("UIGradient"); loadTG.Parent=loadText; onTheme(function(p) loadTG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p),ColorSequenceKeypoint.new(0.5,W3),ColorSequenceKeypoint.new(1,p)}) end)
+local dotHolder=Instance.new("Frame"); dotHolder.AnchorPoint=Vector2.new(0.5,0); dotHolder.Position=UDim2.new(0.5,0,0.79,0); dotHolder.Size=UDim2.new(0,60,0,14); dotHolder.BackgroundTransparency=1; dotHolder.ZIndex=202; dotHolder.Parent=loadOv
+local dotL2=Instance.new("UIListLayout"); dotL2.FillDirection=Enum.FillDirection.Horizontal; dotL2.Padding=UDim.new(0,10); dotL2.HorizontalAlignment=Enum.HorizontalAlignment.Center; dotL2.VerticalAlignment=Enum.VerticalAlignment.Center; dotL2.Parent=dotHolder
 local dots={}
-for i=1,3 do
-    local d=Instance.new("Frame"); d.Size=UDim2.new(0,8,0,8); d.BackgroundColor3=theme.primary
-    d.BackgroundTransparency=0.90; d.BorderSizePixel=0; d.ZIndex=203; d.Parent=dotHolder; corner(d,4)
-    onTheme(function(p) d.BackgroundColor3=p end); dots[i]=d
-end
+for i=1,3 do local d=Instance.new("Frame"); d.Size=UDim2.new(0,8,0,8); d.BackgroundColor3=theme.primary; d.BackgroundTransparency=0.90; d.BorderSizePixel=0; d.ZIndex=203; d.Parent=dotHolder; corner(d,4); onTheme(function(p) d.BackgroundColor3=p end); dots[i]=d end
 
 local dotAlive,ringAlive,logoAlive,textAlive=true,true,true,true
-task.spawn(function()
-    while dotAlive do
-        for i=1,3 do tw(dots[i],0.22,{BackgroundTransparency=0,Size=UDim2.new(0,10,0,10)},Enum.EasingStyle.Sine); task.wait(0.16); tw(dots[i],0.38,{BackgroundTransparency=0.90,Size=UDim2.new(0,8,0,8)},Enum.EasingStyle.Sine) end
-        task.wait(0.18)
-    end
-end)
-task.spawn(function()
-    local ang=0
-    while ringAlive do
-        ang=(ang+5)%360; spinG.Rotation=ang
-        local rad2=math.rad(ang)
-        if spinRing.Parent then
-            local rc=spinRing.AbsolutePosition; local rs2=spinRing.AbsoluteSize
-            spinDot.Position=UDim2.new(0,rc.X+rs2.X/2+27*math.cos(rad2)-4,0,rc.Y+rs2.Y/2+27*math.sin(rad2)-4)
-        end
-        RunService.RenderStepped:Wait()
-    end
-end)
-task.spawn(function()
-    while logoAlive do
-        tw(spinLogoG,0.82,{Offset=Vector2.new(0.5,0)},Enum.EasingStyle.Sine); task.wait(0.82)
-        tw(spinLogoG,0.82,{Offset=Vector2.new(-0.5,0)},Enum.EasingStyle.Sine); task.wait(0.82)
-    end
-end)
-task.spawn(function()
-    while textAlive do
-        tw(loadText,1.0,{TextTransparency=0.20},Enum.EasingStyle.Sine); task.wait(1.0)
-        tw(loadText,1.0,{TextTransparency=0},Enum.EasingStyle.Sine); task.wait(1.0)
-    end
-end)
-task.spawn(function()
-    while loadOv and loadOv.Parent do loadTG.Offset=Vector2.new(math.sin(os.clock()*0.52)*0.36,0); RunService.RenderStepped:Wait() end
-end)
+task.spawn(function() while dotAlive do for i=1,3 do tw(dots[i],0.22,{BackgroundTransparency=0,Size=UDim2.new(0,10,0,10)},Enum.EasingStyle.Sine); task.wait(0.16); tw(dots[i],0.38,{BackgroundTransparency=0.90,Size=UDim2.new(0,8,0,8)},Enum.EasingStyle.Sine) end; task.wait(0.18) end end)
+task.spawn(function() local ang=0; while ringAlive do ang=(ang+5)%360; spinG.Rotation=ang; local rad2=math.rad(ang); if spinRing.Parent then local rc=spinRing.AbsolutePosition; local rs2=spinRing.AbsoluteSize; spinDot.Position=UDim2.new(0,rc.X+rs2.X/2+27*math.cos(rad2)-4,0,rc.Y+rs2.Y/2+27*math.sin(rad2)-4) end; RunService.RenderStepped:Wait() end end)
+task.spawn(function() while logoAlive do tw(spinLogoG,0.82,{Offset=Vector2.new(0.5,0)},Enum.EasingStyle.Sine); task.wait(0.82); tw(spinLogoG,0.82,{Offset=Vector2.new(-0.5,0)},Enum.EasingStyle.Sine); task.wait(0.82) end end)
+task.spawn(function() while textAlive do tw(loadText,1.0,{TextTransparency=0.20},Enum.EasingStyle.Sine); task.wait(1.0); tw(loadText,1.0,{TextTransparency=0},Enum.EasingStyle.Sine); task.wait(1.0) end end)
+task.spawn(function() while loadOv and loadOv.Parent do loadTG.Offset=Vector2.new(math.sin(os.clock()*0.52)*0.36,0); RunService.RenderStepped:Wait() end end)
 
 local function finishLoading()
     dotAlive=false; ringAlive=false; logoAlive=false; textAlive=false
     for i=1,3 do task.delay((i-1)*0.10,function() tw(dots[i],0.36,{BackgroundTransparency=1,Size=UDim2.new(0,4,0,4)},Enum.EasingStyle.Quart) end) end
-    task.wait(0.24)
-    tw(spinDot,0.34,{BackgroundTransparency=1}); tw(loadText,0.40,{TextTransparency=1},Enum.EasingStyle.Quart)
+    task.wait(0.24); tw(spinDot,0.34,{BackgroundTransparency=1}); tw(loadText,0.40,{TextTransparency=1},Enum.EasingStyle.Quart)
     tw(spinLogo,0.40,{TextTransparency=1},Enum.EasingStyle.Quart); tw(spinRing,0.42,{Size=UDim2.new(0,16,0,16)},Enum.EasingStyle.Quart); tw(spinSt,0.40,{Transparency=1})
     task.wait(0.28); tw(loadOv,0.48,{BackgroundTransparency=1},Enum.EasingStyle.Quart)
     task.delay(0.50,function()
         pcall(function() loadOv:Destroy() end); applyTheme()
-        notify("Welcome to "..VMARK.." Hub!","The script was created by the Vanezy Scripts team.",7,true)
+        notify("Welcome to "..VMARK.." Hub!","Aimbot + ESP Edition",7,true)
     end)
 end
 
--- ═══════════════════════════════════
--- BOOT
--- ═══════════════════════════════════
--- Set initial section without animation
+-- ══ BOOT ═════════════════════════════════════════════════
 sections.Home.page.Visible=true
 navBtns.Home.line.Visible=true; navBtns.Home.line.Size=UDim2.new(0,26,0,3)
 navBtns.Home.icon.TextColor3=theme.primary; navBtns.Home.lbl.TextColor3=W3
 navBtns.Home.btn.BackgroundTransparency=0.68
 
 applyTheme()
-
-win.Size=UDim2.new(0,W,0,10)
-shadow.Size=UDim2.new(0,W+20,0,H+20)
+win.Size=UDim2.new(0,W,0,10); shadow.Size=UDim2.new(0,W+20,0,10)
 task.wait(0.06)
-twBack(win,0.55,{Size=UDim2.new(0,W,0,H)})
-twBack(shadow,0.55,{Size=UDim2.new(0,W+20,0,H+20)})
-
+twBack(win,0.55,{Size=UDim2.new(0,W,0,H)}); twBack(shadow,0.55,{Size=UDim2.new(0,W+20,0,H+20)})
 task.delay(5.5,finishLoading)

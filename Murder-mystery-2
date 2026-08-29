@@ -142,7 +142,7 @@ local pickerOpen=false
 -- ═══════════════════════════════════
 local shadow=Instance.new("Frame")
 shadow.AnchorPoint=Vector2.new(0.5,0.5)
-shadow.Position=UDim2.new(0.5,0,0.5,12)
+shadow.Position=UDim2.new(0.5,0,0.5,0)
 shadow.Size=UDim2.new(0,W+20,0,H+20)
 shadow.BackgroundColor3=BK
 shadow.BackgroundTransparency=0.72
@@ -289,7 +289,7 @@ local function makeWinDrag(h)
         if i.UserInputType~=Enum.UserInputType.MouseMovement and i.UserInputType~=Enum.UserInputType.Touch then return end
         local d=UserInputService:GetMouseLocation()-sm; winPosX=sx+d.X; winPosY=sy+d.Y
         win.Position=UDim2.new(0.5,winPosX,0.5,winPosY)
-        shadow.Position=UDim2.new(0.5,winPosX,0.5,winPosY+12)
+        shadow.Position=UDim2.new(0.5,winPosX,0.5,winPosY)
     end))
     conn(UserInputService.InputEnded:Connect(function(i)
         if i.UserInputType~=Enum.UserInputType.MouseButton1 and i.UserInputType~=Enum.UserInputType.Touch then return end
@@ -306,9 +306,29 @@ body.Position=UDim2.new(0,0,0,HDR_H); body.Size=UDim2.new(1,0,1,-HDR_H)
 body.BackgroundTransparency=1; body.ZIndex=3; body.Parent=win
 
 local grip=Instance.new("TextButton")
-grip.AnchorPoint=Vector2.new(0.5,1); grip.Position=UDim2.new(0.5,0,1,-6)
-grip.Size=UDim2.new(0,44,0,4); grip.BackgroundColor3=W3; grip.BackgroundTransparency=0.84
-grip.Text=""; grip.AutoButtonColor=false; grip.ZIndex=7; grip.Parent=win; corner(grip,2)
+grip.AnchorPoint=Vector2.new(0.5,1)
+grip.Position=UDim2.new(0.5,0,1,-4)
+grip.Size=UDim2.new(0,80,0,6)
+grip.BackgroundColor3=W3
+grip.BackgroundTransparency=0.84
+grip.Text=""
+grip.AutoButtonColor=false
+grip.ZIndex=7
+grip.Parent=win
+corner(grip,3)
+
+-- Invisible hitbox — ловит клики рядом
+local gripHit=Instance.new("TextButton")
+gripHit.AnchorPoint=Vector2.new(0.5,1)
+gripHit.Position=UDim2.new(0.5,0,1,-4)
+gripHit.Size=UDim2.new(0,140,0,24)
+gripHit.BackgroundTransparency=1
+gripHit.Text=""
+gripHit.AutoButtonColor=false
+gripHit.ZIndex=6
+gripHit.Parent=win
+
+-- Grip drag logic
 local function makeGripDrag(h,onP,onR)
     local drag,sm,sx,sy=false,nil,0,0
     h.InputBegan:Connect(function(i)
@@ -319,18 +339,19 @@ local function makeGripDrag(h,onP,onR)
         if not drag then return end
         if i.UserInputType~=Enum.UserInputType.MouseMovement and i.UserInputType~=Enum.UserInputType.Touch then return end
         local d=UserInputService:GetMouseLocation()-sm; winPosX=sx+d.X; winPosY=sy+d.Y
-        win.Position=UDim2.new(0.5,winPosX,0.5,winPosY); shadow.Position=UDim2.new(0.5,winPosX,0.5,winPosY+12)
+        win.Position=UDim2.new(0.5,winPosX,0.5,winPosY); shadow.Position=UDim2.new(0.5,winPosX,0.5,winPosY)
     end))
     conn(UserInputService.InputEnded:Connect(function(i)
         if i.UserInputType~=Enum.UserInputType.MouseButton1 and i.UserInputType~=Enum.UserInputType.Touch then return end
         if drag and onR then onR() end; drag=false
     end))
 end
-grip.MouseEnter:Connect(function() tw(grip,0.16,{BackgroundTransparency=0.52,Size=UDim2.new(0,58,0,5)}) end)
-grip.MouseLeave:Connect(function() tw(grip,0.22,{BackgroundTransparency=0.84,Size=UDim2.new(0,44,0,4)}) end)
-makeGripDrag(grip,
-    function() tw(grip,0.10,{BackgroundTransparency=0.26,Size=UDim2.new(0,64,0,5)}) end,
-    function() tw(grip,0.22,{BackgroundTransparency=0.84,Size=UDim2.new(0,44,0,4)}) end)
+
+gripHit.MouseEnter:Connect(function() tw(grip,0.16,{BackgroundTransparency=0.52,Size=UDim2.new(0,96,0,7)}) end)
+gripHit.MouseLeave:Connect(function() tw(grip,0.22,{BackgroundTransparency=0.84,Size=UDim2.new(0,80,0,6)}) end)
+makeGripDrag(gripHit,
+    function() tw(grip,0.10,{BackgroundTransparency=0.26,Size=UDim2.new(0,96,0,7)}) end,
+    function() tw(grip,0.22,{BackgroundTransparency=0.84,Size=UDim2.new(0,80,0,6)}) end)
 
 -- ═══════════════════════════════════
 -- NAV
@@ -371,10 +392,14 @@ content.Position=UDim2.new(0,NAV_W,0,0); content.Size=UDim2.new(1,-NAV_W,1,0)
 content.BackgroundTransparency=1; content.ClipsDescendants=true; content.ZIndex=3; content.Parent=body
 uipad(content,12,12,12,12)
 
--- Top shadow fade on content
 local contentTopShadow=Instance.new("Frame")
-contentTopShadow.Size=UDim2.new(1,0,0,32); contentTopShadow.BackgroundColor3=BK
-contentTopShadow.BackgroundTransparency=0; contentTopShadow.BorderSizePixel=0; contentTopShadow.ZIndex=9; contentTopShadow.Parent=content
+contentTopShadow.Size=UDim2.new(1,24,0,40)
+contentTopShadow.Position=UDim2.new(0,-12,0,-12)
+contentTopShadow.BackgroundColor3=BK
+contentTopShadow.BackgroundTransparency=0
+contentTopShadow.BorderSizePixel=0
+contentTopShadow.ZIndex=9
+contentTopShadow.Parent=content
 local cts_G=Instance.new("UIGradient"); cts_G.Rotation=90
 cts_G.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.28),NumberSequenceKeypoint.new(1,1)}); cts_G.Parent=contentTopShadow
 
@@ -488,7 +513,7 @@ local function makeBtn(parent,text,color,order,cb)
 end
 
 -- ═══════════════════════════════════
--- NOTIFICATIONS
+-- NOTIFICATIONS — GLASS + CORNER SLIDE
 -- ═══════════════════════════════════
 local notifHolder=Instance.new("Frame")
 notifHolder.Name="NotifHolder"
@@ -510,101 +535,73 @@ local activeNotifs={}
 local function dismissNotif(n)
     if n.dismissed then return end; n.dismissed=true
     for i,v in ipairs(activeNotifs) do if v==n then table.remove(activeNotifs,i); break end end
-    tw(n.f,0.28,{Position=UDim2.new(1,280,0,0),BackgroundTransparency=1},Enum.EasingStyle.Quart)
-    tw(n.f,0.24,{Size=UDim2.new(0,258,0,0)},Enum.EasingStyle.Quart)
-    task.delay(0.32,function() if n.f and n.f.Parent then n.f:Destroy() end end)
+    local f=n.f; if not f then return end
+    if n.shadow then tw(n.shadow,0.28,{BackgroundTransparency=1}) end
+    if n.glow then tw(n.glow,0.28,{BackgroundTransparency=1}) end
+    tw(f,0.36,{Position=UDim2.new(1,40,0,-60),Size=UDim2.new(0,260,0,0),BackgroundTransparency=1},Enum.EasingStyle.Quart,Enum.EasingDirection.In)
+    task.delay(0.40,function() if f and f.Parent then f:Destroy() end end)
 end
 
--- Icon type → shape style
--- "info"=square-dot, "ok"=check-diamond, "warn"=triangle-dot, "copy"=two-squares, "save"=circle-dot, "off"=dash
-local function makeNotifIcon(parent, iconType)
-    -- Container: small colored rounded square, left side
-    local ic = Instance.new("Frame")
-    ic.AnchorPoint = Vector2.new(0, 0.5)
-    ic.Position = UDim2.new(0, 12, 0.5, 0)
-    ic.Size = UDim2.new(0, 28, 0, 28)
-    ic.BackgroundColor3 = theme.primary
-    ic.BackgroundTransparency = 0.78
-    ic.BorderSizePixel = 0
-    ic.ZIndex = 104
-    ic.Parent = parent
-    corner(ic, 8)
-    onTheme(function(p)
-        ic.BackgroundColor3 = p
-    end)
+local function makeNotifIcon(parent,iconType)
+    local ic=Instance.new("Frame")
+    ic.AnchorPoint=Vector2.new(0,0.5); ic.Position=UDim2.new(0,8,0.5,0)
+    ic.Size=UDim2.new(0,24,0,24)
+    ic.BackgroundColor3=theme.primary; ic.BackgroundTransparency=0.85
+    ic.BorderSizePixel=0; ic.ZIndex=104; ic.Parent=parent
+    corner(ic,6)
+    onTheme(function(p) ic.BackgroundColor3=p end)
 
-    -- Inner shape built from Frames
-    if iconType == "copy" then
-        -- Two overlapping small squares (copy icon)
-        local s1 = Instance.new("Frame")
-        s1.Size = UDim2.new(0,10,0,10); s1.Position = UDim2.new(0,4,0,8)
-        s1.BackgroundColor3 = W3; s1.BackgroundTransparency=0; s1.BorderSizePixel=0; s1.ZIndex=105; s1.Parent=ic; corner(s1,3)
-        local s2 = Instance.new("Frame")
-        s2.Size = UDim2.new(0,10,0,10); s2.Position = UDim2.new(0,10,0,4)
-        s2.BackgroundColor3 = W3; s2.BackgroundTransparency=0.15; s2.BorderSizePixel=0; s2.ZIndex=105; s2.Parent=ic; corner(s2,3)
+    if iconType=="copy" then
+        local s1=Instance.new("Frame"); s1.Size=UDim2.new(0,8,0,8); s1.Position=UDim2.new(0,3,0,7)
+        s1.BackgroundColor3=W3; s1.BackgroundTransparency=0; s1.BorderSizePixel=0; s1.ZIndex=105; s1.Parent=ic; corner(s1,2)
+        local s2=Instance.new("Frame"); s2.Size=UDim2.new(0,8,0,8); s2.Position=UDim2.new(0,9,0,3)
+        s2.BackgroundColor3=W3; s2.BackgroundTransparency=0.15; s2.BorderSizePixel=0; s2.ZIndex=105; s2.Parent=ic; corner(s2,2)
         onTheme(function(p) s1.BackgroundColor3=p:Lerp(W3,0.9); s2.BackgroundColor3=p:Lerp(W3,0.75) end)
-    elseif iconType == "ok" or iconType == "save" then
-        -- Diamond (rotated square)
-        local d = Instance.new("Frame")
-        d.AnchorPoint = Vector2.new(0.5,0.5); d.Position = UDim2.new(0.5,0,0.5,0)
-        d.Size = UDim2.new(0,11,0,11); d.Rotation = 45
-        d.BackgroundColor3 = W3; d.BackgroundTransparency=0; d.BorderSizePixel=0; d.ZIndex=105; d.Parent=ic; corner(d,2)
-        -- Center dot
-        local dot = Instance.new("Frame")
-        dot.AnchorPoint = Vector2.new(0.5,0.5); dot.Position = UDim2.new(0.5,0,0.5,0)
-        dot.Size = UDim2.new(0,5,0,5); dot.BackgroundColor3=theme.primary
-        dot.BorderSizePixel=0; dot.ZIndex=106; dot.Parent=ic; corner(dot,3)
+    elseif iconType=="ok" or iconType=="save" then
+        local d=Instance.new("Frame"); d.AnchorPoint=Vector2.new(0.5,0.5); d.Position=UDim2.new(0.5,0,0.5,0)
+        d.Size=UDim2.new(0,9,0,9); d.Rotation=45; d.BackgroundColor3=W3; d.BackgroundTransparency=0
+        d.BorderSizePixel=0; d.ZIndex=105; d.Parent=ic; corner(d,2)
+        local dot=Instance.new("Frame"); dot.AnchorPoint=Vector2.new(0.5,0.5); dot.Position=UDim2.new(0.5,0,0.5,0)
+        dot.Size=UDim2.new(0,4,0,4); dot.BackgroundColor3=theme.primary; dot.BorderSizePixel=0
+        dot.ZIndex=106; dot.Parent=ic; corner(dot,2)
         onTheme(function(p) dot.BackgroundColor3=p end)
-    elseif iconType == "warn" then
-        -- Triangle-like: tall narrow rect + dot below
-        local bar2 = Instance.new("Frame")
-        bar2.AnchorPoint = Vector2.new(0.5,0); bar2.Position = UDim2.new(0.5,0,0,4)
-        bar2.Size = UDim2.new(0,3,0,12); bar2.BackgroundColor3=W3
-        bar2.BackgroundTransparency=0; bar2.BorderSizePixel=0; bar2.ZIndex=105; bar2.Parent=ic; corner(bar2,2)
-        local dot2 = Instance.new("Frame")
-        dot2.AnchorPoint = Vector2.new(0.5,0); dot2.Position = UDim2.new(0.5,0,0,19)
-        dot2.Size = UDim2.new(0,3,0,3); dot2.BackgroundColor3=W3
-        dot2.BackgroundTransparency=0; dot2.BorderSizePixel=0; dot2.ZIndex=105; dot2.Parent=ic; corner(dot2,2)
-    elseif iconType == "off" then
-        -- Horizontal dash
-        local dash = Instance.new("Frame")
-        dash.AnchorPoint = Vector2.new(0.5,0.5); dash.Position = UDim2.new(0.5,0,0.5,0)
-        dash.Size = UDim2.new(0,14,0,3); dash.BackgroundColor3=W3
-        dash.BackgroundTransparency=0; dash.BorderSizePixel=0; dash.ZIndex=105; dash.Parent=ic; corner(dash,2)
-    elseif iconType == "map" then
-        -- Small circle (location pin head)
-        local circ = Instance.new("Frame")
-        circ.AnchorPoint = Vector2.new(0.5,0); circ.Position = UDim2.new(0.5,0,0,3)
-        circ.Size = UDim2.new(0,10,0,10); circ.BackgroundColor3=W3
-        circ.BackgroundTransparency=0; circ.BorderSizePixel=0; circ.ZIndex=105; circ.Parent=ic; corner(circ,5)
-        local pin = Instance.new("Frame")
-        pin.AnchorPoint = Vector2.new(0.5,0); pin.Position = UDim2.new(0.5,0,0,13)
-        pin.Size = UDim2.new(0,3,0,8); pin.BackgroundColor3=W3
-        pin.BackgroundTransparency=0.2; pin.BorderSizePixel=0; pin.ZIndex=105; pin.Parent=ic; corner(pin,2)
-    elseif iconType == "resize" then
-        -- Two corner brackets
-        local br1 = Instance.new("Frame"); br1.Size=UDim2.new(0,7,0,2); br1.Position=UDim2.new(0,3,0,4)
+    elseif iconType=="warn" then
+        local bar2=Instance.new("Frame"); bar2.AnchorPoint=Vector2.new(0.5,0); bar2.Position=UDim2.new(0.5,0,0,3)
+        bar2.Size=UDim2.new(0,2,0,10); bar2.BackgroundColor3=W3; bar2.BackgroundTransparency=0
+        bar2.BorderSizePixel=0; bar2.ZIndex=105; bar2.Parent=ic; corner(bar2,1)
+        local dot2=Instance.new("Frame"); dot2.AnchorPoint=Vector2.new(0.5,0); dot2.Position=UDim2.new(0.5,0,0,16)
+        dot2.Size=UDim2.new(0,2,0,2); dot2.BackgroundColor3=W3; dot2.BackgroundTransparency=0
+        dot2.BorderSizePixel=0; dot2.ZIndex=105; dot2.Parent=ic; corner(dot2,1)
+    elseif iconType=="off" then
+        local dash=Instance.new("Frame"); dash.AnchorPoint=Vector2.new(0.5,0.5); dash.Position=UDim2.new(0.5,0,0.5,0)
+        dash.Size=UDim2.new(0,12,0,2); dash.BackgroundColor3=W3; dash.BackgroundTransparency=0
+        dash.BorderSizePixel=0; dash.ZIndex=105; dash.Parent=ic; corner(dash,1)
+    elseif iconType=="map" then
+        local circ=Instance.new("Frame"); circ.AnchorPoint=Vector2.new(0.5,0); circ.Position=UDim2.new(0.5,0,0,2)
+        circ.Size=UDim2.new(0,8,0,8); circ.BackgroundColor3=W3; circ.BackgroundTransparency=0
+        circ.BorderSizePixel=0; circ.ZIndex=105; circ.Parent=ic; corner(circ,4)
+        local pin=Instance.new("Frame"); pin.AnchorPoint=Vector2.new(0.5,0); pin.Position=UDim2.new(0.5,0,0,11)
+        pin.Size=UDim2.new(0,2,0,7); pin.BackgroundColor3=W3; pin.BackgroundTransparency=0.2
+        pin.BorderSizePixel=0; pin.ZIndex=105; pin.Parent=ic; corner(pin,1)
+    elseif iconType=="resize" then
+        local br1=Instance.new("Frame"); br1.Size=UDim2.new(0,6,0,2); br1.Position=UDim2.new(0,2,0,3)
         br1.BackgroundColor3=W3; br1.BackgroundTransparency=0; br1.BorderSizePixel=0; br1.ZIndex=105; br1.Parent=ic
-        local br2 = Instance.new("Frame"); br2.Size=UDim2.new(0,2,0,7); br2.Position=UDim2.new(0,3,0,4)
+        local br2=Instance.new("Frame"); br2.Size=UDim2.new(0,2,0,6); br2.Position=UDim2.new(0,2,0,3)
         br2.BackgroundColor3=W3; br2.BackgroundTransparency=0; br2.BorderSizePixel=0; br2.ZIndex=105; br2.Parent=ic
-        local br3 = Instance.new("Frame"); br3.Size=UDim2.new(0,7,0,2); br3.Position=UDim2.new(0,16,0,21)
+        local br3=Instance.new("Frame"); br3.Size=UDim2.new(0,6,0,2); br3.Position=UDim2.new(0,14,0,18)
         br3.BackgroundColor3=W3; br3.BackgroundTransparency=0; br3.BorderSizePixel=0; br3.ZIndex=105; br3.Parent=ic
-        local br4 = Instance.new("Frame"); br4.Size=UDim2.new(0,2,0,7); br4.Position=UDim2.new(0,21,0,16)
+        local br4=Instance.new("Frame"); br4.Size=UDim2.new(0,2,0,6); br4.Position=UDim2.new(0,18,0,14)
         br4.BackgroundColor3=W3; br4.BackgroundTransparency=0; br4.BorderSizePixel=0; br4.ZIndex=105; br4.Parent=ic
     else
-        -- Default: small centered circle dot
-        local dot3 = Instance.new("Frame")
-        dot3.AnchorPoint = Vector2.new(0.5,0.5); dot3.Position = UDim2.new(0.5,0,0.5,0)
-        dot3.Size = UDim2.new(0,8,0,8); dot3.BackgroundColor3=W3
-        dot3.BackgroundTransparency=0; dot3.BorderSizePixel=0; dot3.ZIndex=105; dot3.Parent=ic; corner(dot3,4)
+        local dot3=Instance.new("Frame"); dot3.AnchorPoint=Vector2.new(0.5,0.5); dot3.Position=UDim2.new(0.5,0,0.5,0)
+        dot3.Size=UDim2.new(0,6,0,6); dot3.BackgroundColor3=W3; dot3.BackgroundTransparency=0
+        dot3.BorderSizePixel=0; dot3.ZIndex=105; dot3.Parent=ic; corner(dot3,3)
     end
-
     return ic
 end
 
--- Auto-detect icon from title/desc
 local function pickIcon(title,desc,isSystem)
-    local t = title:lower()
+    local t=title:lower()
     if t:find("cop") then return "copy"
     elseif t:find("sav") then return "save"
     elseif t:find("reset") or t:find("restor") then return "warn"
@@ -622,76 +619,173 @@ local function notify(title,desc,dur,isSystem)
     if #activeNotifs>=4 then dismissNotif(activeNotifs[1]) end
     local n={}
 
+    -- Glass container — anchored top-right, grows inward from corner
     local f=Instance.new("Frame")
     f.Name="Notif"
-    f.Size=UDim2.new(0,258,0,0)
-    f.Position=UDim2.new(1,280,0,0)
-    f.BackgroundColor3=rgb(12,12,18)
-    f.BackgroundTransparency=0
+    f.AnchorPoint=Vector2.new(1,0)
+    f.Size=UDim2.new(0,260,0,0)
+    f.Position=UDim2.new(1,40,0,-60)
+    f.BackgroundColor3=rgb(12,12,20)
+    f.BackgroundTransparency=1
     f.BorderSizePixel=0
     f.ZIndex=101
-    f.ClipsDescendants=true
+    f.ClipsDescendants=false
     f.Parent=notifHolder
-    corner(f,12)
+    corner(f,14)
 
-    local fst=stroke(f,W3,1.2,0)
-    local fsg=Instance.new("UIGradient"); fsg.Rotation=95
-    onTheme(function(p) fsg.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,p:Lerp(W3,0.14)),ColorSequenceKeypoint.new(1,p:Lerp(BK,0.58))}) end)
-    fsg.Parent=fst
+    -- Soft shadow behind (bleeds outside)
+    local shadow=Instance.new("Frame")
+    shadow.Size=UDim2.new(1,10,1,10)
+    shadow.Position=UDim2.new(0,-5,0,-5)
+    shadow.BackgroundColor3=BK
+    shadow.BackgroundTransparency=1
+    shadow.BorderSizePixel=0
+    shadow.ZIndex=100
+    shadow.Parent=f
+    corner(shadow,18)
 
-    -- Top accent line (inside, clipped)
-    local topAccent=Instance.new("Frame")
-    topAccent.Size=UDim2.new(1,0,0,2)
-    topAccent.BackgroundColor3=W3; topAccent.BackgroundTransparency=0; topAccent.BorderSizePixel=0; topAccent.ZIndex=102; topAccent.Parent=f
-    local taG=Instance.new("UIGradient"); taG.Parent=topAccent
-    onTheme(function(p) taG.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,BK),ColorSequenceKeypoint.new(0.15,p),ColorSequenceKeypoint.new(0.85,p),ColorSequenceKeypoint.new(1,BK)}) end)
+    -- Glass edge stroke (cold, subtle)
+    local fst=Instance.new("UIStroke")
+    fst.Color=rgb(55,55,72)
+    fst.Thickness=1
+    fst.Transparency=0.78
+    fst.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
+    fst.Parent=f
 
-    -- Left icon
-    local iconType = pickIcon(title,desc,isSystem)
-    local iconFrame = makeNotifIcon(f, iconType)
+    -- Inner top highlight (glass reflection)
+    local highlight=Instance.new("Frame")
+    highlight.Size=UDim2.new(1,-20,0,1)
+    highlight.Position=UDim2.new(0,10,0,1)
+    highlight.BackgroundColor3=W3
+    highlight.BackgroundTransparency=0.94
+    highlight.BorderSizePixel=0
+    highlight.ZIndex=102
+    highlight.Parent=f
 
-    -- Text offset to accommodate icon (icon is 28px wide at x=12, so text starts at 12+28+8=48)
-    local TEXT_X = 48
+    -- Inner bottom depth (volume shadow)
+    local depth=Instance.new("Frame")
+    depth.Size=UDim2.new(1,-20,0,1)
+    depth.Position=UDim2.new(0,10,1,-2)
+    depth.BackgroundColor3=BK
+    depth.BackgroundTransparency=0.94
+    depth.BorderSizePixel=0
+    depth.ZIndex=102
+    depth.Parent=f
 
-    local tl=Instance.new("TextLabel"); tl.Size=UDim2.new(1,-(TEXT_X+30),0,20); tl.Position=UDim2.new(0,TEXT_X,0,11)
-    tl.BackgroundTransparency=1; tl.Text=title; tl.Font=Enum.Font.GothamBold; tl.TextSize=13
-    tl.TextColor3=W3; tl.TextXAlignment=Enum.TextXAlignment.Left; tl.ZIndex=103; tl.Parent=f
+    -- Theme tinted inner glow (subtle volume)
+    local glow=Instance.new("Frame")
+    glow.Size=UDim2.new(1,0,1,0)
+    glow.BackgroundColor3=theme.primary
+    glow.BackgroundTransparency=1
+    glow.BorderSizePixel=0
+    glow.ZIndex=101
+    glow.Parent=f
+    corner(glow,14)
+    onTheme(function(p) glow.BackgroundColor3=p end)
 
-    local dl=Instance.new("TextLabel"); dl.Size=UDim2.new(1,-(TEXT_X+10),0,28); dl.Position=UDim2.new(0,TEXT_X,0,30)
-    dl.BackgroundTransparency=1; dl.Text=desc; dl.TextWrapped=true; dl.Font=Enum.Font.Gotham
-    dl.TextSize=11; dl.TextColor3=theme.sub; dl.TextXAlignment=Enum.TextXAlignment.Left
-    dl.TextYAlignment=Enum.TextYAlignment.Top; dl.ZIndex=103; dl.Parent=f
+    -- Icon
+    local iconType=pickIcon(title,desc,isSystem)
+    local iconFrame=makeNotifIcon(f,iconType)
 
-    local xb=Instance.new("TextButton"); xb.Size=UDim2.new(0,20,0,20); xb.Position=UDim2.new(1,-27,0,9)
-    xb.BackgroundColor3=rgb(28,28,40); xb.BackgroundTransparency=0.30; xb.Text="×"
-    xb.Font=Enum.Font.GothamBold; xb.TextSize=13; xb.TextColor3=theme.sub; xb.ZIndex=104; xb.Parent=f; corner(xb,10)
+    -- Text layout math:
+    -- Icon: X=8, W=24 → ends at 32
+    -- Gap: 8px → text starts at 40
+    -- Close btn: W=18, Position=1,-22 → left edge at 238
+    -- Text ends at: 238-8=230
+    -- Text width: 230-40=190px
+    local TEXT_X=40
+    local TEXT_W=190
+
+    -- Title
+    local tl=Instance.new("TextLabel")
+    tl.Size=UDim2.new(0,TEXT_W,0,16)
+    tl.Position=UDim2.new(0,TEXT_X,0,9)
+    tl.BackgroundTransparency=1
+    tl.Text=title
+    tl.Font=Enum.Font.GothamBold
+    tl.TextSize=12
+    tl.TextColor3=W3
+    tl.TextXAlignment=Enum.TextXAlignment.Left
+    tl.TextWrapped=false
+    tl.TextTruncate=Enum.TextTruncate.AtEnd
+    tl.ZIndex=103
+    tl.Parent=f
+
+    -- Description
+    local dl=Instance.new("TextLabel")
+    dl.Size=UDim2.new(0,TEXT_W,0,22)
+    dl.Position=UDim2.new(0,TEXT_X,0,25)
+    dl.BackgroundTransparency=1
+    dl.Text=desc
+    dl.TextWrapped=true
+    dl.Font=Enum.Font.Gotham
+    dl.TextSize=11
+    dl.TextColor3=theme.sub
+    dl.TextXAlignment=Enum.TextXAlignment.Left
+    dl.TextYAlignment=Enum.TextYAlignment.Top
+    dl.ZIndex=103
+    dl.Parent=f
+
+    -- Close button
+    local xb=Instance.new("TextButton")
+    xb.Size=UDim2.new(0,18,0,18)
+    xb.Position=UDim2.new(1,-22,0,8)
+    xb.BackgroundColor3=rgb(28,28,40)
+    xb.BackgroundTransparency=0.30
+    xb.Text="×"
+    xb.Font=Enum.Font.GothamBold
+    xb.TextSize=12
+    xb.TextColor3=theme.sub
+    xb.ZIndex=104
+    xb.Parent=f
+    corner(xb,9)
     xb.MouseEnter:Connect(function() tw(xb,0.12,{BackgroundTransparency=0,TextColor3=W3}) end)
     xb.MouseLeave:Connect(function() tw(xb,0.16,{BackgroundTransparency=0.30,TextColor3=theme.sub}) end)
 
-    local barBg=Instance.new("Frame"); barBg.AnchorPoint=Vector2.new(0,1); barBg.Position=UDim2.new(0,0,1,0)
-    barBg.Size=UDim2.new(1,0,0,3); barBg.BackgroundColor3=rgb(22,22,32); barBg.BorderSizePixel=0; barBg.ZIndex=103; barBg.Parent=f; corner(barBg,2)
-    local bar=Instance.new("Frame"); bar.Size=UDim2.new(1,0,1,0); bar.BackgroundColor3=theme.primary
-    bar.BorderSizePixel=0; bar.ZIndex=104; bar.Parent=barBg; corner(bar,2)
+    -- Progress bar — heavily rounded, small, centered at bottom with margins
+    local barBg=Instance.new("Frame")
+    barBg.AnchorPoint=Vector2.new(0.5,1)
+    barBg.Position=UDim2.new(0.5,0,1,-6)
+    barBg.Size=UDim2.new(1,-24,0,4)
+    barBg.BackgroundColor3=rgb(22,22,32)
+    barBg.BackgroundTransparency=0.20
+    barBg.BorderSizePixel=0
+    barBg.ZIndex=103
+    barBg.Parent=f
+    corner(barBg,999)
+
+    local bar=Instance.new("Frame")
+    bar.Size=UDim2.new(1,0,1,0)
+    bar.BackgroundColor3=theme.primary
+    bar.BorderSizePixel=0
+    bar.ZIndex=104
+    bar.Parent=barBg
+    corner(bar,999)
     onTheme(function(p) bar.BackgroundColor3=p end)
 
-    n.f=f; table.insert(activeNotifs,n)
+    n.f=f; n.shadow=shadow; n.glow=glow; table.insert(activeNotifs,n)
 
-    -- Animate in
+    -- Animate in: slide from top-right corner + expand
     task.spawn(function()
-        twBack(f,0.36,{Size=UDim2.new(0,258,0,72)})
-        task.wait(0.12)
-        tw(f,0.40,{Position=UDim2.new(1,0,0,0)},Enum.EasingStyle.Quart)
+        tw(shadow,0.45,{BackgroundTransparency=0.72})
+        tw(f,0.40,{BackgroundTransparency=0.06})
+        tw(glow,0.50,{BackgroundTransparency=0.96})
+        twBack(f,0.48,{Size=UDim2.new(0,260,0,64),Position=UDim2.new(1,0,0,0)})
     end)
 
-    -- Icon entrance: starts small, springs in
-    iconFrame.Size=UDim2.new(0,10,0,10); iconFrame.BackgroundTransparency=1
-    task.delay(0.18,function()
+    -- Icon pop
+    iconFrame.Size=UDim2.new(0,8,0,8)
+    iconFrame.BackgroundTransparency=1
+    task.delay(0.14,function()
         if iconFrame and iconFrame.Parent then
-            twBack(iconFrame,0.36,{Size=UDim2.new(0,28,0,28),BackgroundTransparency=0.78})
+            twBack(iconFrame,0.34,{Size=UDim2.new(0,24,0,24),BackgroundTransparency=0.85})
         end
     end)
 
+    -- Progress bar shrink
     twLinear(bar,dur,{Size=UDim2.new(0,0,1,0)})
+
+    -- Dismiss handlers
     f.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dismissNotif(n) end
     end)
@@ -859,7 +953,7 @@ for i,name in ipairs(NAV_ORDER) do makeNavBtn(name,i) end
 local NAV_OW,NAV_CW=NAV_W,44; local navCollapsed=false
 local colBtn=Instance.new("TextButton")
 colBtn.AnchorPoint=Vector2.new(0.5,1); colBtn.Position=UDim2.new(0.5,0,1,-10)
-colBtn.Size=UDim2.new(0,28,0,22); colBtn.BackgroundColor3=rgb(18,18,28); colBtn.BackgroundTransparency=0.14
+colBtn.Size=UDim2.new(1,-12,0,22); colBtn.BackgroundColor3=rgb(18,18,28); colBtn.BackgroundTransparency=0.14
 colBtn.Text="‹"; colBtn.Font=Enum.Font.GothamBold; colBtn.TextSize=17; colBtn.TextColor3=theme.sub
 colBtn.AutoButtonColor=false; colBtn.ZIndex=5; colBtn.Parent=nav; corner(colBtn,8); stroke(colBtn,W3,1,0.90)
 local function setNav(col)
@@ -1364,7 +1458,7 @@ local function setWindow(show)
 
         -- Shrink window to orb
         tw(win,0.36,{Size=UDim2.new(0,10,0,10),Position=UDim2.new(0,orbCX,0,orbCY)},Enum.EasingStyle.Quart)
-        tw(shadow,0.30,{Size=UDim2.new(0,4,0,4),BackgroundTransparency=1},Enum.EasingStyle.Quart)
+        tw(shadow,0.30,{Size=UDim2.new(0,4,0,4),BackgroundTransparency=0.72},Enum.EasingStyle.Quart)
 
         task.delay(0.38,function()
             if not windowShown then
@@ -1483,7 +1577,7 @@ local function doClose()
     end
     task.wait(0.18)
     tw(win,0.40,{Size=UDim2.new(0,8,0,8),Position=UDim2.new(0,targX,0,targY)},Enum.EasingStyle.Quart)
-    tw(shadow,0.32,{Size=UDim2.new(0,4,0,4),BackgroundTransparency=1},Enum.EasingStyle.Quart)
+    tw(shadow,0.32,{Size=UDim2.new(0,4,0,4),BackgroundTransparency=0.72},Enum.EasingStyle.Quart)
     winStroke.Transparency=1
 
     -- Orb flash
@@ -1715,7 +1809,7 @@ navBtns.Home.btn.BackgroundTransparency=0.68
 applyTheme()
 
 win.Size=UDim2.new(0,W,0,10)
-shadow.Size=UDim2.new(0,W+20,0,10)
+shadow.Size=UDim2.new(0,W+20,0,H+20)
 task.wait(0.06)
 twBack(win,0.55,{Size=UDim2.new(0,W,0,H)})
 twBack(shadow,0.55,{Size=UDim2.new(0,W+20,0,H+20)})

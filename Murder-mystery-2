@@ -120,7 +120,7 @@ end
 local W,H    = cfg.win_w or 500,cfg.win_h or 320
 local NAV_W  = 100
 local HDR_H  = 48
-local VMARK  = "‹V›"
+local VMARK  = "‹vvv›"
 local applyWindowSize,enterResize
 local resizeActive=false
 local orbBusy=false
